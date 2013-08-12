@@ -7,3 +7,6 @@
 [submodule "src/guzzle"]
 	path = src/guzzle
 	url = https://github.com/guzzle/guzzle
+[submodule "src/stash"]
+	path = src/stash
+	url = https://github.com/tedivm/Stash
