@@ -1,0 +1,9 @@
+[submodule "src/aws-sdk-php"]
+	path = src/aws-sdk-php
+	url = https://github.com/aws/aws-sdk-php
+[submodule "src/symfony"]
+	path = src/symfony
+	url = https://github.com/symfony/symfony
+[submodule "src/guzzle"]
+	path = src/guzzle
+	url = https://github.com/guzzle/guzzle
