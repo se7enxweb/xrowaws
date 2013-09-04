@@ -119,10 +119,11 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }
         
         //Memcache implement(Stash)
-        try {
+        try 
+        {
             $memINI = eZINI::instance( 'xrowaws.ini' );
-            if($memINI->hasVariable("MemcacheSettings", "memhost")
-               AND $memINI->hasVariable("MemcacheSettings", "memport"))
+            if($memINI->hasVariable("MemcacheSettings", "Host")
+               AND $memINI->hasVariable("MemcacheSettings", "Port"))
             {
                 $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
                 $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
@@ -715,13 +716,25 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }
 
         // @todo Catch an exception
-        if ( !$contents = $this->dfsbackend->getContents( $filePath ) )
+        $item = $this->pool->getItem($filePath);
+        $item->get($filePath);
+        if($item->isMiss())
         {
-            eZDebug::writeError("An error occured while reading contents of DFS://$filePath", __METHOD__ );
-            return false;
+            if ( !$contents = $this->dfsbackend->getContents( $filePath ) )
+            {
+                eZDebug::writeError("An error occured while reading contents of DFS://$filePath", __METHOD__ );
+                return false;
+            }
+            
+            $item->lock();
+            $item->set($contents);
+        }else{
+            $contents= $item->get($filePath);
         }
+        
         return $contents;
     }
+    
 
     /**
      * Fetches and returns metadata for $filePath
@@ -729,10 +742,11 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
      *                     database.
      */
     function _fetchMetadata( $filePath, $fname = false )
-    {
+    {//$this->pool->flush();
         $metadata = $this->eventHandler->filter( 'cluster/loadMetadata', $filePath );
         
         $filePath_key =$filePath ."metadata";
+        
         $item = $this->pool->getItem($filePath_key);
         
         if ( is_array( $metadata ) )
@@ -754,16 +768,18 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         else
             $fname = "_fetchMetadata($filePath)";
         $sql = "SELECT * FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath );
+        $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
         
-        //$this->pool->flush();
+        
          
         $item->get($filePath_key);
         if($item->isMiss())
         {
-            $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
             $item->lock();
             $item->set($metadata);
         }else{
+            $item->lock();
+            $item->set($metadata);
             $metadata = $item->get($filePath_key);
         }
         
@@ -772,7 +788,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
 
         return $metadata;
     }
-
+    
+    
     public function _linkCopy( $srcPath, $dstPath, $fname = false )
     {
         if ( $fname )

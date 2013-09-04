@@ -114,8 +114,8 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
         //Memcache implement(Stash)
         try {
             $memINI = eZINI::instance( 'xrowaws.ini' );
-            if($memINI->hasVariable("MemcacheSettings", "memhost")
-               AND $memINI->hasVariable("MemcacheSettings", "memport"))
+            if($memINI->hasVariable("MemcacheSettings", "Host")
+               AND $memINI->hasVariable("MemcacheSettings", "Port"))
             {
                 $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
                 $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
@@ -128,6 +128,7 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
         }catch(Exception $e){
             eZDebugSetting::writeDebug( 'Memcache', "dfs::ctor('$e')" );
         }
+        
     }
 
     /**

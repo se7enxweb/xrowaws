@@ -41,11 +41,11 @@ class xrowS3MemcachedBackend
         //Memcache implement(Stash)
        try {
             $memINI = eZINI::instance( 'xrowaws.ini' );
-            if($memINI->hasVariable("MemcacheSettings", "memhost")
-               AND $memINI->hasVariable("MemcacheSettings", "memport"))
+            if($memINI->hasVariable("MemcacheSettings", "Host")
+               AND $memINI->hasVariable("MemcacheSettings", "Port"))
             {
-                $this->mem_host = $memINI->variable( "MemcacheSettings", "memhost" );
-                $this->mem_port = $memINI->variable( "MemcacheSettings", "memport" );
+                $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+                $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
                 $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
                 $this->pool = new Pool($this->driver);
             }else
@@ -223,26 +223,17 @@ class xrowS3MemcachedBackend
      */
     public function getContents( $filePath )
     {
-        $this->accumulatorStart();
-        $filePath_key=$this->makeDFSPath( $filePath );
-        // @todo Throw an exception if it fails
-        //       (FileNotFound, or FileNotReadable, depends on testing)
-
-        $item = $this->pool->getItem($filePath_key);
-        $item->get($filePath_key);
-        
-        if($item->isMiss())
+        if(strpos($filePath,'storage') != FALSE )
         {
-            $ret = @file_get_contents( $filePath_key );
-            $item->lock();
-            $item->set($ret);
-        }else{
-            $ret = @file_get_contents( $filePath_key );
-            $item->lock();
-            $item->set($ret);
-        }
+            $result = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                 'Key' => $filePath));
+            $ret = (string) $result['Body'];
+         }else{
+             $this->accumulatorStart();
+             $ret = @file_get_contents( $this->makeDFSPath( $filePath ) );
+             $this->accumulatorStop();
+         }
 
-        $this->accumulatorStop();
         return $ret;
     }
 
@@ -340,7 +331,7 @@ class xrowS3MemcachedBackend
      */
     protected function makeDFSPath( $filePath )
     {
-        if(strpos($filePath,'/storage/') !== FALSE )
+        if(strpos($filePath,'storage') != FALSE )
         {
             return $filePath;
         }else
@@ -366,7 +357,7 @@ class xrowS3MemcachedBackend
 
     protected function createFile( $filePath, $contents, $atomic = true )
     {
-        if(strpos($filePath,'/storage/') !== FALSE )
+        if(strpos($filePath,'storage') != FALSE )
         {
             try{
                 $this->s3->putObject(array(

@@ -23,8 +23,21 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         $filePathHash = md5( $filepath );
         $sql = "SELECT * FROM ezdfsfile WHERE name_hash='$filePathHash'" ;
         
-        $driver = new Memcache(array('servers' => array('192.168.0.1', '11211')));
-        $pool = new Pool($driver);
+        
+        $memINI = eZINI::instance( 'xrowaws.ini' );
+        if($memINI->hasVariable("MemcacheSettings", "Host")
+           AND $memINI->hasVariable("MemcacheSettings", "Port"))
+        {
+            $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+            $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
+            $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+            $pool = new Pool($driver);
+        }
+        else
+        {
+            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+        }
+        
         $filePath_key = $filepath . "metadata";
         $item = $pool->getItem($filePath_key);
         $item->get($filePath_key);
@@ -57,9 +70,21 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
     public function passthrough( $filepath, $filesize, $offset = false, $length = false )
     {
         $dfsFilePath = CLUSTER_MOUNT_POINT_PATH . '/' . $filepath;
-
-        $driver = new Memcache(array('servers' => array('192.168.0.1', '11211')));
-        $pool = new Pool($driver);
+           
+        $memINI = eZINI::instance( 'xrowaws.ini' );
+        if($memINI->hasVariable("MemcacheSettings", "Host")
+           AND $memINI->hasVariable("MemcacheSettings", "Port"))
+        {
+            $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+            $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
+            $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+            $pool = new Pool($driver);
+        }
+        else
+        {
+            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+        }
+        
         $item = $pool->getItem($dfsFilePath);
         $item->get($dfsFilePath);
         
