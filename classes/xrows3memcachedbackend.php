@@ -25,12 +25,6 @@ class xrowS3MemcachedBackend
     {
         $mountPointPath = eZINI::instance( 'file.ini' )->variable( 'eZDFSClusteringSettings', 'MountPointPath' );
 
-        if ( !$mountPointPath = realpath( $mountPointPath ) )
-            throw new eZDFSFileHandlerNFSMountPointNotFoundException( $mountPointPath );
-
-        if ( !is_writeable( $mountPointPath ) )
-            throw new eZDFSFileHandlerNFSMountPointNotWriteableException( $mountPointPath );
-
         if ( substr( $mountPointPath, -1 ) != '/' )
             $mountPointPath = "$mountPointPath/";
 
@@ -80,23 +74,35 @@ class xrowS3MemcachedBackend
      */
     public function copyFromDFSToDFS( $srcFilePath, $dstFilePath )
     {
+        
         $this->accumulatorStart();
 
         $srcFilePath = $this->makeDFSPath( $srcFilePath );
         $dstFilePath = $this->makeDFSPath( $dstFilePath );
-        if ( file_exists( dirname( $dstFilePath ) ) )
+        
+        if(strpos($srcFilePath,'/storage/') !== FALSE )
         {
-            $ret = copy( $srcFilePath, $dstFilePath );
-            if ( $ret )
-                $this->fixPermissions( $dstFilePath );
+            try
+            {
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                     'Key' => $srcFilePath));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error getting the object.$srcFilePath\n";
+            }
+            
+            $contentdata = (string) $result['Body'];
+            $ret = $this->createFile( $dstFilePath,$contentdata );
+        }else{
+            $item_src = $this->pool->getItem($srcFilePath); 
+            $item_dst = $this->pool->getItem($dstFilePath);
+            $item_dst->lock();
+            $item_dst->set($item_src->get($srcFilePath));
+            $ret =true;
         }
-        else
-        {
-            $ret = $this->createFile( $dstFilePath, file_get_contents( $srcFilePath ), false );
-        }
-
+        
         $this->accumulatorStop();
-
+        
         return $ret;
     }
 
@@ -116,19 +122,27 @@ class xrowS3MemcachedBackend
         {
             $dstFilePath = $srcFilePath;
         }
-        $srcFilePath = $this->makeDFSPath( $srcFilePath );
+        
+        eZLog::write('Fetch: ' . $srcFilePath ."|".$dstFilePath, 'memcache_copyFromDFS.log');
 
-        if ( file_exists( dirname( $dstFilePath ) ) )
+        if(strpos($srcFilePath,'/storage/') !== FALSE )
         {
-            $ret = copy( $srcFilePath, $dstFilePath );
-            if ( $ret )
-                $this->fixPermissions( $dstFilePath );
+            try
+            {
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                     'Key' => $srcFilePath));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error getting the object.$srcFilePath\n";
+            }
+            
+            $contentdata = (string) $result['Body'];
+            $ret = $this->createFile( $dstFilePath,$contentdata );
+        }else{
+            $srcFilePath = $this->makeDFSPath( $srcFilePath );
+            $item_src = $this->pool->getItem($srcFilePath); 
+            $ret = $this->createFile( $dstFilePath, $item_src->get($srcFilePath) );
         }
-        else
-        {
-            $ret = $this->createFile( $dstFilePath, file_get_contents( $srcFilePath ) );
-        }
-
         $this->accumulatorStop();
 
         return $ret;
@@ -143,7 +157,7 @@ class xrowS3MemcachedBackend
      *        Optional path to copy to. If not specified, $srcFilePath is used
      */
     public function copyToDFS( $srcFilePath, $dstFilePath = false )
-    {
+    { 
         $this->accumulatorStart();
 
         if ( $dstFilePath === false )
@@ -151,8 +165,31 @@ class xrowS3MemcachedBackend
             $dstFilePath = $srcFilePath;
         }
         $dstFilePath = $this->makeDFSPath( $dstFilePath );
-        $ret = $this->createFile( $dstFilePath, file_get_contents( $srcFilePath ), true );
-
+        
+        if(strpos($dstFilePath,'/storage/') !== FALSE )
+        {
+            $ret = $this->createFile( $dstFilePath, file_get_contents( $srcFilePath ), true );
+        }else{
+            $srcFilePath = $this->makeDFSPath( $srcFilePath );
+            $item_src = $this->pool->getItem($srcFilePath);
+            $item_src->get($srcFilePath);
+            
+            $item_dst = $this->pool->getItem($dstFilePath);
+            if($item_src->isMiss())
+            {
+                $item_src->lock();
+                $item_src->set(file_get_contents( $srcFilePath ));
+                $item_dst->lock();
+                $item_dst->set(file_get_contents( $srcFilePath ));
+                $ret=true;
+            }else
+            {
+                $item_dst->lock();
+                $item_dst->set($item_src->get($srcFilePath));
+                $ret=true;
+            }
+        }
+        
         $this->accumulatorStop();
 
         return $ret;
@@ -167,30 +204,54 @@ class xrowS3MemcachedBackend
      * @todo Improve error handling using exceptions
      */
     public function delete( $filePath )
-    {
+    { 
         $this->accumulatorStart();
-
+        
         if ( is_array( $filePath ) )
         {
-            $ret = true;
             foreach( $filePath as $file )
             {
-                $dfsPath = $this->makeDFSPath( $file );
-                $locRet = @unlink( $dfsPath );
-                $ret = $ret and $locRet;
-
-                if ( $locRet )
-                    eZClusterFileHandler::cleanupEmptyDirectories( $dfsPath );
+                if(strpos($file,'/storage/') !== FALSE )
+                {   
+                    try
+                    {
+                        $this->s3->deleteObject(array('Bucket' => $this->bucket,
+                                                      'Key' => $file ));
+                    }catch(S3Exception $e)
+                    {
+                        echo "There was an error deletting the object.$file\n";
+                    }
+                }
+                else
+                {
+                    $item = $this->pool->getItem($file);
+                    $item->clear();
+                }
             }
+            
+            $ret = true;
         }
         else
         {
-            $dfsPath = $this->makeDFSPath( $filePath );
-            $ret = @unlink( $dfsPath );
-
-            if ( $ret )
-                eZClusterFileHandler::cleanupEmptyDirectories( $dfsPath );
+            if(strpos($file,'/storage/') !== FALSE )
+            {
+                try
+                {
+                    $this->s3->deleteObject(array('Bucket' => $this->bucket,
+                                                  'Key' => $filePath));
+                }catch(S3Exception $e)
+                {
+                    echo "There was an error deletting the object.$file\n";
+                }
+            }
+            else
+            {
+                $item = $this->pool->getItem($filePath);
+                $item->clear();
+            }
+           $ret=true;
         }
+        
 
         $this->accumulatorStop();
 
@@ -207,13 +268,58 @@ class xrowS3MemcachedBackend
      */
     public function passthrough( $filePath, $startOffset = 0, $length = false )
     {
-        return eZFile::downloadContent(
-            $this->makeDFSPath( $filePath ),
-            $startOffset,
-            $length
-        );
+        $file = $this->makeDFSPath( $filePath );
+        $item = $this->pool->getItem($file);
+        $item->get($file);
+        if($item->isMiss())
+        {
+            if ( !file_exists( $file ) )
+            {
+                eZDebug::writeError( "'$file' does not exist", __METHOD__ );
+                return false;
+            }
+            if ( ( $fp = fopen( $file, 'rb' ) ) === false )
+            {
+                eZDebug::writeError( "An error occured opening '$file' for reading", __METHOD__ );
+                return false;
+            }
+            
+            $fileSize = filesize( $file );
+            
+            // an offset has been given: move the pointer to that offset if it seems valid
+            if ( $startOffset !== false && $startOffset <= $fileSize && fseek( $fp, $startOffset ) === -1 )
+            {
+                eZDebug::writeError( "Error while setting offset on '{$file}'", __METHOD__ );
+                return false;
+            }
+            
+            $transferred = $startOffset;
+            $packetSize = self::READ_PACKET_SIZE;
+            $endOffset = ( $length === false ) ? $fileSize - 1 : $length + $startOffset - 1;
+            
+            while ( !feof( $fp ) && $transferred < $endOffset + 1 )
+            {
+                if ( $transferred + $packetSize > $endOffset + 1 )
+                {
+                    $packetSize = $endOffset + 1 - $transferred;
+                }
+                echo fread( $fp, $packetSize );
+                $transferred += $packetSize;
+            }
+            fclose( $fp );
+            
+            $item = $this->pool->getItem($file);
+            $item->lock();
+            $item->set(fread( $fp, $packetSize ));
+            
+            return true;
+        }else
+        {
+            $item = $this->pool->getItem($file);
+            echo $item->get($file);
+            return true;
+        }
     }
-
     /**
      * Returns the binary content of $filePath from DFS
      *
@@ -223,18 +329,39 @@ class xrowS3MemcachedBackend
      */
     public function getContents( $filePath )
     {
-        if(strpos($filePath,'storage') != FALSE )
+        if(strpos($filePath,'/storage/') !== FALSE )
         {
-            $result = $this->s3->getObject(array('Bucket' => $this->bucket,
-                                                 'Key' => $filePath));
+            try
+            {
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                     'Key' => $filePath));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error getting the object.$srcFilePath\n";
+            }
             $ret = (string) $result['Body'];
-         }else{
-             $this->accumulatorStart();
-             $ret = @file_get_contents( $this->makeDFSPath( $filePath ) );
-             $this->accumulatorStop();
+        }
+        else
+        {
+            $this->accumulatorStart();
+
+            $item = $this->pool->getItem($filePath);
+            $item->get($filePath);
+            
+            if($item->isMiss())
+            {
+                $item->lock();
+                $item->set(@file_get_contents( $this->makeDFSPath( $filePath ) ));
+                $ret = @file_get_contents( $this->makeDFSPath( $filePath ) );
+            }else
+            {
+                $ret = $item->get($filePath);
+            }
+            
+            $this->accumulatorStop();
          }
 
-        return $ret;
+         return $ret;
     }
 
     /**
@@ -248,25 +375,19 @@ class xrowS3MemcachedBackend
     public function createFileOnDFS( $filePath, $contents )
     {
         $this->accumulatorStart();
-
         $filePath = $this->makeDFSPath( $filePath );
         
-        $item = $this->pool->getItem($filePath);
-        $item->get($filePath);
-        
-        if($item->isMiss())
+        if(strpos($filePath,'/storage/') !== FALSE )
         {
             $ret = $this->createFile( $filePath, $contents, false );
-            eZLog::write('CreateFile: ' . $filePath, 'memcache_createFileOnDFS.log');
-            
-            $item->lock();
-            $item->set($contents);
-        }else{
-            $ret=true;
-            $item->lock();
-            $item->set($contents);
+        }else
+        {
+             $item = $this->pool->getItem($filePath);
+             $item->lock();
+             $item->set($contents);
+             $ret = true;
         }
-
+        
         $this->accumulatorStop();
 
         return $ret;
@@ -286,11 +407,36 @@ class xrowS3MemcachedBackend
         $oldPath = $this->makeDFSPath( $oldPath );
         $newPath = $this->makeDFSPath( $newPath );
 
-        $ret = eZFile::rename( $oldPath, $newPath, true );
-
-        if ( $ret )
-            eZClusterFileHandler::cleanupEmptyDirectories( $oldPath );
-
+        if(strpos($filePath,'/storage/') !== FALSE )
+        {
+            try
+            {
+                $contents = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                       'Key' => $oldPath));
+                $this->s3->putObject(array('Bucket' => $this->bucket,
+                                           'Key' => $newPath,
+                                           'Body' => $contents,
+                                           'ACL' => 'public-read'));
+                
+                $this->s3->deleteObject(array('Bucket' => $this->bucket,
+                                              'Key' => $oldPath ));
+                $ret = true;
+            }catch(S3Exception $e){
+                echo "There was an error uploading the new file and delete old file on S3.\n";
+                $ret =false;
+            }
+        }
+        else
+        {
+            $item_old = $this->pool->getItem($oldPath);
+            $item_new = $this->pool->getItem($newPath);
+        
+            $item_new->lock();
+            $item_new->set($item_old->get($oldPath));
+            $item_old->clear();
+            $ret = true;
+        }
+        
         $this->accumulatorStop();
 
         return $ret;
@@ -304,13 +450,29 @@ class xrowS3MemcachedBackend
      */
     public function existsOnDFS( $filePath )
     {
-        if(strpos($filePath,'storage') != FALSE )
+        if(strpos($filePath,'/storage/') !== FALSE )
         {
-            return $this->s3->doesObjectExist(array( 'Bucket' => $this->bucket,
-                                                     'Key' => $filePath )); 
+            $s3result= $this->s3->doesObjectExist( $this->bucket, $filePath);
+
+            if($s3result)
+            {
+                return true;
+            }
+            else{
+                return false;
+            }
         }else
         {
-            return file_exists( $this->makeDFSPath( $filePath ) );
+            $item = $this->pool->getItem($filePath);
+            $item->get($filePath);
+            if($item->isMiss())
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
         }
     }
 
@@ -331,13 +493,7 @@ class xrowS3MemcachedBackend
      */
     protected function makeDFSPath( $filePath )
     {
-        if(strpos($filePath,'storage') != FALSE )
-        {
-            return $filePath;
-        }else
-        {
-            return $this->mountPointPath . $filePath;
-        }
+        return $filePath;
     }
 
     protected function accumulatorStart()
@@ -357,7 +513,7 @@ class xrowS3MemcachedBackend
 
     protected function createFile( $filePath, $contents, $atomic = true )
     {
-        if(strpos($filePath,'storage') != FALSE )
+        if(strpos($filePath,'/storage/') !== FALSE )
         {
             try{
                 $this->s3->putObject(array(
@@ -370,25 +526,17 @@ class xrowS3MemcachedBackend
                 $createResult = true;
             }catch(S3Exception $e){
                 echo "There was an error uploading the file.\n";
+                $createResult = false;
             }
         }else{
-            $item = $this->pool->getItem($filePath);
-            $item->get($filePath);
+            $createResult = eZFile::create( basename( $filePath ), dirname( $filePath ), $contents, $atomic );
             
-            if($item->isMiss())
-            {
-                $createResult = eZFile::create( basename( $filePath ), dirname( $filePath ), $contents, $atomic );
-
-                if ( $createResult )
-                    $this->fixPermissions( $filePath );
-                
-                $item->lock();
-                $item->set($contents);
-            }else{
-                $item->lock();
-                $item->set($contents);
-                $createResult = true;
-            }
+            $item = $this->pool->getItem($filePath);
+            $item->lock();
+            $item->set($contents);
+            
+            if ( $createResult )
+                $this->fixPermissions( $filePath );
         }
         
         return $createResult;
@@ -404,6 +552,9 @@ class xrowS3MemcachedBackend
      * Permission mask that must be applied to created files
      * @var int
      */
+    
     private $filePermissionMask;
+    
+    const READ_PACKET_SIZE = 16384;
 }
 ?>

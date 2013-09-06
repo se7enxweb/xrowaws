@@ -202,7 +202,8 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
     {
         $filePath = eZDBFileHandler::cleanPath( $filePath );
         eZDebugSetting::writeDebug( 'kernel-clustering', "dfs::fileStore( '$filePath' )" );
-
+        eZLog::write('copy: ' . $filePath, 'memcache_filestore123.log');
+        
         if ( $scope === false )
             $scope = 'UNKNOWN_SCOPE';
 
@@ -282,6 +283,8 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
     function fileFetch( $filePath )
     {
         $filePath = eZDBFileHandler::cleanPath( $filePath );
+        eZLog::write('Fetch: ' .$fileFetch, 'memcache_fielFetch_handler.log');
+        
         eZDebugSetting::writeDebug( 'kernel-clustering', "dfs::fileFetch( '$filePath' )" );
 
         return self::$dbbackend->_fetch( $filePath );
@@ -695,6 +698,7 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
                 if ( !$this->useStaleCache && !$noCache )
                 {
                     $res = $this->startCacheGeneration();
+                    var_dump($res);die();
                     if ( $res !== true )
                     {
                         eZDebugSetting::writeDebug( 'kernel-clustering', "{$this->filePath} is being generated, switching to staleCache mode", __METHOD__ );
@@ -738,7 +742,8 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      * @return bool
      */
     public function isFileExpired( $fname, $mtime, $expiry, $curtime, $ttl )
-    {
+    {  
+        
         if ( $mtime == false or $mtime < 0 )
         {
             return true;
@@ -775,6 +780,7 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     public function isLocalFileExpired( $expiry, $curtime, $ttl )
     {
+    	
         return self::isFileExpired( $this->filePath, @filemtime( $this->filePath ), $expiry, $curtime, $ttl );
     }
 
@@ -898,20 +904,8 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
 
         if ( self::LOCAL_CACHE )
         {
-            $item = $this->pool->getItem($this->filePath);
-            $item->get($this->filePath);
-            if($item->isMiss())
-            {
-                eZDebugSetting::writeDebug( 'kernel-clustering',
-                    "Creating local copy of the file", "dfs::storeCache( '{$this->filePath}' )" );
-                eZFile::create( basename( $this->filePath ), dirname( $this->filePath ), $binaryData, true );
-                $item->lock();
-                $item->set($binaryData);
-            }else{
-                eZDebugSetting::writeDebug( 'kernel-clustering',
-                "Creating local copy of the file", "dfs::storeCache( '{$this->filePath}' )" );
-                eZFile::create( basename( $this->filePath ), dirname( $this->filePath ), $item->get($this->filePath), true );
-            }
+            eZDebugSetting::writeDebug( 'kernel-clustering',"Creating local copy of the file", "dfs::storeCache( '{$this->filePath}' )" );
+            eZFile::create( basename( $this->filePath ), dirname( $this->filePath ), $binaryData, true );
         }
 
         return $result;

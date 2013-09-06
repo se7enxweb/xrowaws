@@ -23,10 +23,9 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         $filePathHash = md5( $filepath );
         $sql = "SELECT * FROM ezdfsfile WHERE name_hash='$filePathHash'" ;
         
-        
         $memINI = eZINI::instance( 'xrowaws.ini' );
-        if($memINI->hasVariable("MemcacheSettings", "Host")
-           AND $memINI->hasVariable("MemcacheSettings", "Port"))
+        
+        if($memINI->hasVariable("MemcacheSettings", "Host") AND $memINI->hasVariable("MemcacheSettings", "Port"))
         {
             $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
             $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
@@ -47,8 +46,7 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             $item->lock();
             
             if ( !$res = mysqli_query( $this->db, $sql ) )
-                throw new RuntimeException( "Failed to fetch file metadata for '$filepath' " .
-                    "(error #". mysqli_errno( $this->db ).": " . mysqli_error( $this->db ) );
+                throw new RuntimeException( "Failed to fetch file metadata for '$filepath' " . "(error #". mysqli_errno( $this->db ).": " . mysqli_error( $this->db ) );
     
             if ( mysqli_num_rows( $res ) == 0 )
             {
@@ -57,10 +55,13 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
     
             $metadata = mysqli_fetch_assoc( $res );
             
+            $item->lock();
+            
             $item->set($metadata);
             
             mysqli_free_result( $res );
-        }else{
+        }else
+        {
             $metadata=$item->get($filePath_key);
         }
         
@@ -69,11 +70,11 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
 
     public function passthrough( $filepath, $filesize, $offset = false, $length = false )
     {
-        $dfsFilePath = CLUSTER_MOUNT_POINT_PATH . '/' . $filepath;
-           
+        $dfsFilePath = $filepath; 
+
         $memINI = eZINI::instance( 'xrowaws.ini' );
-        if($memINI->hasVariable("MemcacheSettings", "Host")
-           AND $memINI->hasVariable("MemcacheSettings", "Port"))
+
+        if($memINI->hasVariable("MemcacheSettings", "Host") AND $memINI->hasVariable("MemcacheSettings", "Port"))
         {
             $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
             $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
@@ -86,31 +87,31 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         }
         
         $item = $pool->getItem($dfsFilePath);
-        $item->get($dfsFilePath);
         
         if($item->isMiss())
         {
-        
-	        if ( !file_exists( $dfsFilePath ) )
-	            throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
-	
-	        $fp = fopen( $dfsFilePath, 'rb' );
-	        if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
-	            throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
-	        if ( $offset === false && $length === false )
-	        {    fpassthru( $fp );
-	            $item->lock();
-	            $item->set(fpassthru( $fp ));
-	        }
-	        else
-	        {   $item->lock();
-	            $item->set(fread( $fp, $length ));
-	            echo fread( $fp, $length );
-	        }
-	        fclose( $fp );
-	        
-	        
-        }else{
+            if ( !file_exists( $dfsFilePath ) )
+                throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
+
+            $fp = fopen( $dfsFilePath, 'rb' );
+            
+            if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
+                throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
+            
+            if ( $offset === false && $length === false )
+            {    
+                fpassthru( $fp );
+            }
+            else
+            {   $item->lock();
+                $item->set(fread( $fp, $length ));
+                echo fread( $fp, $length );
+            }
+            
+            fclose( $fp );
+        }
+        else
+        {
             echo $item->get($dfsFilePath);
         }
     }
