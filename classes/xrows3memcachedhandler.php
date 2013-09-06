@@ -1586,4 +1586,3 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     protected $_cacheType = null;
 }
-?>
