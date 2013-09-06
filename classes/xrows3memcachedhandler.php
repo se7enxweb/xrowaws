@@ -698,7 +698,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
                 if ( !$this->useStaleCache && !$noCache )
                 {
                     $res = $this->startCacheGeneration();
-                    var_dump($res);die();
                     if ( $res !== true )
                     {
                         eZDebugSetting::writeDebug( 'kernel-clustering', "{$this->filePath} is being generated, switching to staleCache mode", __METHOD__ );
@@ -1586,4 +1585,3 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     protected $_cacheType = null;
 }
-?>
