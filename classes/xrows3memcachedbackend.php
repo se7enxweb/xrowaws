@@ -137,7 +137,7 @@ class xrowS3MemcachedBackend
             }
             
             $contentdata = (string) $result['Body'];
-            $ret = $this->createFile( $dstFilePath,$contentdata );
+            $ret = $this->createFileOnLFS( $dstFilePath,$contentdata );
         }else{
             $srcFilePath = $this->makeDFSPath( $srcFilePath );
             $item_src = $this->pool->getItem($srcFilePath); 
@@ -411,8 +411,10 @@ class xrowS3MemcachedBackend
         {
             try
             {
-                $contents = $this->s3->getObject(array('Bucket' => $this->bucket,
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
                                                        'Key' => $oldPath));
+                $contents=(string) $result['Body'];
+                
                 $this->s3->putObject(array('Bucket' => $this->bucket,
                                            'Key' => $newPath,
                                            'Body' => $contents,
@@ -520,8 +522,7 @@ class xrowS3MemcachedBackend
                     'Bucket' => $this->bucket,
                     'Key' => $filePath,
                     'Body' => $contents,
-                    'ACL' => 'public-read',
-                ));
+                    'ACL' => 'public-read'));
                 
                 $createResult = true;
             }catch(S3Exception $e){
@@ -542,6 +543,15 @@ class xrowS3MemcachedBackend
         return $createResult;
     }
 
+    protected function createFileOnLFS( $filePath, $contents, $atomic = true )
+    {
+        $createResult = eZFile::create( basename( $filePath ), dirname( $filePath ), $contents, $atomic );
+        
+        if ( $createResult )
+            $this->fixPermissions( $filePath );
+    
+        return $createResult;
+    }
     /**
      * Path to the local distributed filesystem mount point
      * @var string
