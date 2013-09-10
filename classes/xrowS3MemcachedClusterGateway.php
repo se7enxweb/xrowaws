@@ -3,6 +3,12 @@ use Stash\Driver\Memcache;
 use Stash\Item;
 use Stash\Pool;
 
+use Aws\Common\Aws;
+use Aws\S3\Exception\S3Exception;
+use Aws\Common\Enum\Region;
+use Aws\CloudFront\Exception\Exception;
+use Aws\S3\S3Client;
+
 class xrowS3MemcachedClusterGateway extends ezpClusterGateway
 {
     protected $port = 3306;
@@ -86,33 +92,66 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
         }
         
-        $item = $pool->getItem($dfsFilePath);
-        
-        if($item->isMiss())
+        //S3 implement
+        try 
         {
-            if ( !file_exists( $dfsFilePath ) )
-                throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
-
-            $fp = fopen( $dfsFilePath, 'rb' );
-            
-            if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
-                throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
-            
-            if ( $offset === false && $length === false )
-            {    
-                fpassthru( $fp );
+            $s3ini = eZINI::instance( 'xrowaws.ini' );
+            $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
+            $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
+            $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
+        
+            // Instantiate an S3 client
+            $this->s3 = Aws::factory(array('key' => $awskey,
+                    'secret' => $secretkey,
+                    'region' => Region::US_EAST_1))->get('s3');
+        }catch(Exception $e){
+            eZDebugSetting::writeDebug( 'Amazon S3', "dfs::ctor('$e')" );
+        }
+        
+        if(strpos($dfsFilePath,'/storage/') !== FALSE )
+        {
+            try
+            {
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                     'Key' => $dfsFilePath));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error getting the object.$dfsFilePath\n";
             }
-            else
-            {   $item->lock();
-                $item->set(fread( $fp, $length ));
-                echo fread( $fp, $length );
-            }
-            
-            fclose( $fp );
+        
+            $contentdata = (string) $result['Body'];
+            echo $contentdata;
         }
         else
         {
-            echo $item->get($dfsFilePath);
+            $item = $pool->getItem($dfsFilePath);
+            
+            if($item->isMiss())
+            {
+                if ( !file_exists( $dfsFilePath ) )
+                    throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
+    
+                $fp = fopen( $dfsFilePath, 'rb' );
+                
+                if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
+                    throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
+                
+                if ( $offset === false && $length === false )
+                {    
+                    fpassthru( $fp );
+                }
+                else
+                {   $item->lock();
+                    $item->set(fread( $fp, $length ));
+                    echo fread( $fp, $length );
+                }
+                
+                fclose( $fp );
+            }
+            else
+            {
+                echo $item->get($dfsFilePath);
+            }
         }
     }
 

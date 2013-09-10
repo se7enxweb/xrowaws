@@ -34,6 +34,13 @@ use Stash\Driver\Memcache;
 use Stash\Item;
 use Stash\Pool;
 
+use Aws\Common\Aws;
+use Aws\S3\Exception\S3Exception;
+use Aws\Common\Enum\Region;
+use Aws\CloudFront\Exception\Exception;
+use Aws\S3\S3Client;
+use Aws\S3\S3;
+
 class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
 {
     public function __construct()
@@ -136,6 +143,21 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }catch(Exception $e){
             eZDebugSetting::writeDebug( 'Memcache', "dfs::ctor('$e')" );
         }
+        
+        //S3 implement
+        try {
+            $s3ini = eZINI::instance( 'xrowaws.ini' );
+            $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
+            $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
+            $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
+            
+            // Instantiate an S3 client
+            $this->s3 = Aws::factory(array('key' => $awskey,
+                    'secret' => $secretkey,
+                    'region' => Region::US_EAST_1))->get('s3');
+        }catch(Exception $e){
+            eZDebugSetting::writeDebug( 'Amazon S3', "dfs::ctor('$e')" );
+        }
     }
 
     /**
@@ -221,11 +243,26 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             return $this->_fail( $srcFilePath, "Failed to insert file metadata on copying." );
         }
 
+        $insert_array=array( 'datatype'=> $datatype,
+                             'name' => $dstFilePath,
+                             'name_trunk' => $nameTrunk,
+                             'name_hash' => $filePathHash,
+                             'scope' => $scope,
+                             'size' => $contentLength,
+                             'mtime' => $fileMTime,
+                             'expired' => ($fileMTime < 0) ? 1 : 0 );
+        
+        $filePath_key =$dstFilePath ."metadata";
+        $item = $this->pool->getItem($filePath_key);
+        $item->lock();
+        $item->set($insert_array);
+
         // Copy file data.
         if ( !$this->dfsbackend->copyFromDFSToDFS( $srcFilePath, $dstFilePath ) )
         {
             return $this->_fail( $srcFilePath, "Failed to copy DFS://$srcFilePath to DFS://$dstFilePath" );
         }
+        
         return true;
     }
 
@@ -259,6 +296,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Purging file metadata for $filePath failed" );
+        }else{
+            $filePath_key =$filePath ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
         if ( mysqli_affected_rows( $this->db ) == 1 )
         {
@@ -342,7 +383,12 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             $this->_rollback( $fname );
             return $this->_fail( "Purging file metadata by like statement $like failed" );
+        }else{
+            $filePath_key =$this->_quote( $like, true ) ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
+        
         $deletedDBFiles = mysqli_affected_rows( $this->db );
         $this->dfsbackend->delete( $files );
 
@@ -405,6 +451,24 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
     {
         if ( !$this->_query( "UPDATE " . self::TABLE_METADATA . " SET mtime=-ABS(mtime), expired=1 WHERE name_hash=" . $this->_md5( $filePath ), $fname ) )
             return $this->_fail( "Deleting file $filePath failed" );
+        
+        if(strpos($filePath,'/storage/') !== FALSE )
+        {   
+            try
+            {
+                $this->s3->deleteObject(array('Bucket' => $this->bucket,
+                                              'Key' => $filePath ));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error deletting the object.$filePath\n";
+            }
+        }
+        else
+        {
+            $item = $this->pool->getItem($filePath);
+            $item->clear();
+        }
+        
         return true;
     }
 
@@ -451,6 +515,9 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             return $this->_fail( "Failed to delete files by like: '$like'" );
         }
+        $filePath_key =$this->_quote( $like, true ) ."metadata";
+        $item = $this->pool->getItem($filePath_key);
+        $item->clear();
         return true;
     }
 
@@ -491,6 +558,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$res = $this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Failed to delete files by regex: '$regex'" );
+        }else{
+            $filePath_key =$this->_quote( $regex ) ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
         return true;
     }
@@ -538,6 +609,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$res = $this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Failed to delete files by wildcard: '$wildcard'" );
+        }else{
+            $filePath_key =$regex ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
         return true;
     }
@@ -575,6 +650,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             {
                 eZDebug::writeError( "Failed to delete files in dir: '$commonPath/$dirItem/$commonSuffix%'", __METHOD__ );
                 $event = false;
+            }else{
+                $filePath_key =$this->_quote( "$commonPath/$dirItem/$commonSuffix%", true ) ."metadata";
+                $item = $this->pool->getItem($filePath_key);
+                $item->clear();
             }
 
             if ( $event )
@@ -586,7 +665,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         return true;
     }
 
-    public function _exists( $filePath, $fname = false, $ignoreExpiredFiles = true, $checkOnDFS = false )
+    public function _exists( $filePath, $fname = false, $ignoreExpiredFiles = true, $checkOnDFS = 0 )
     {
         if ( $fname )
             $fname .= "::_exists($filePath)";
@@ -594,7 +673,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $fname = "_exists($filePath)";
 
         $row = $this->eventHandler->filter( 'cluster/fileExists', $filePath );
-
+        
         if ( !is_array( $row ) )
         {
             $row = $this->_selectOneRow( "SELECT name, mtime FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath ),
@@ -602,14 +681,18 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }
         if ( $row === false )
             return false;
-
+        
+        
         if ( $ignoreExpiredFiles )
-            $rc = $row[1] >= 0;
+        {    
+            if($row[1] >= 0)
+            {$rc = 1;}else{$rc =0;}
+        }
         else
-            $rc = true;
-
-        if ( $checkOnDFS && $rc )
-        {
+        {$rc = true;}
+                
+        if ($checkOnDFS && $rc )
+        {                
             $rc = $this->dfsbackend->existsOnDFS( $filePath );
         }
         return $rc;
@@ -655,8 +738,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
      * @return string|bool the file physical path, or false if fetch failed
      */
     public function _fetch( $filePath, $uniqueName = false )
-    {
+    {    
+
         $metaData = $this->_fetchMetadata( $filePath );
+        
         if ( !$metaData )
         {
             // @todo Throw an exception
@@ -670,9 +755,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         else
             $tmpFilePath = $filePath . '.' . getmypid().'tmp';
         $this->__mkdir_p( dirname( $tmpFilePath ) );
-
+        
         // copy DFS file to temporary FS path
         // @todo Throw an exception
+
         if ( !$this->dfsbackend->copyFromDFS( $filePath, $tmpFilePath ) )
         {
             eZDebug::writeError("Failed copying DFS://$filePath to FS://$tmpFilePath ");
@@ -681,7 +767,26 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
 
         // Make sure all data is written correctly
         clearstatcache();
-        $tmpSize = filesize( $tmpFilePath );
+
+        if(strpos($tmpFilePath,'/storage/') !== FALSE )
+        { 
+            /*try
+            {
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
+                                                     'Key' => $tmpFilePath));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error getting the object.$srcFilePath\n";
+            }
+            
+            eZLog::write('Fetch: ' .$metaData['size']."|".$result, 'memcache_info1.log');
+            
+            $contentdata = (string) $result['Body'];*/
+            $tmpSize= $metaData['size'];
+        }else{
+            $tmpSize = filesize( $tmpFilePath );
+        } 
+
         // @todo Throw an exception
         if ( $tmpSize != $metaData['size'] )
         {
@@ -697,7 +802,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             $filePath = $tmpFilePath;
         }
-
+        
         return $filePath;
     }
 
@@ -887,6 +992,10 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $this->_rollback( __METHOD__ );
             // @todo Throw an exception
             return false;
+        }else{
+            $filePath_key =$srcFilePath ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
 
         // delete original DFS file
@@ -917,6 +1026,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
             return;
         }
+        
         if ( $fname )
             $fname .= "::_store($filePath, $datatype, $scope)";
         else
@@ -961,13 +1071,27 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             return $this->_fail( "Failed to insert file metadata while storing. Possible race condition" );
         }
 
+        $insert_array=array( 'datatype' => $datatype,
+                             'name' => $filePath,
+                             'name_trunk' => $nameTrunk,
+                             'name_hash' => $filePathHash,
+                             'scope' => $scope,
+                             'size' => $contentLength,
+                             'mtime' => $fileMTime,
+                             'expired' => ( $fileMTime < 0 ) ? 1 : 0 );
+        
+        $filePath_key =$filePath ."metadata";
+        
+        $item = $this->pool->getItem($filePath_key);
+       
+        $item->lock();
+        $item->set($insert_array);
         // copy given $filePath to DFS
         
         if ( !$this->dfsbackend->copyToDFS( $filePath ) )
         {
             return $this->_fail( "Failed to copy FS://$filePath to DFS://$filePath" );
         }
-
         return true;
     }
 
@@ -1026,38 +1150,26 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                    'mtime' => $curTime,
                    'expired' => ( $curTime < 0 ) ? 1 : 0 );
         
-        if(stristr($filePath,'.generating') != FALSE )
+       /* if(stristr($filePath,'.generating') !== FALSE )
         {
             $file_key_temp = substr($filePath,0,-11);
         }else{
             $file_key_temp = $filePath;
         }
         
-        $filePath_key =$file_key_temp ."metadata";
-        
+        $filePath_key =$file_key_temp ."metadata";*/
+        $filePath_key =$filePath;
         $item = $this->pool->getItem($filePath_key);
-        $item->get($filePath_key);
-        if($item->isMiss())
-        {
-           $item->lock();
-           $item->set($update_array);
-        }
-        else
-        {
-            $item->lock();
-            $item->set($update_array);
-        }
-        
+        $item->lock();
+        $item->set($update_array);
+
+        eZLog::write('row: ' . $filePath ."|".$contents, 'memcache_storeContentInner.log');
         if ( !$this->dfsbackend->createFileOnDFS( $filePath, $contents ) )
         {
             return $this->_fail( "Failed to open DFS://$filePath for writing" );
         }
 
         $this->eventHandler->notify( 'cluster/deleteFile', array( $filePath ) );
-
-        $item = $this->pool->getItem($filePath);
-        $item->lock();
-        $item->set($contents);
 
         return true;
     }
@@ -1607,6 +1719,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                 }
             }
         }
+        
         return array( 'result' => 'ok', 'mtime' => $mtime );
     }
 
