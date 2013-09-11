@@ -4,7 +4,7 @@ use Lavoiesl\PhpBenchmark\Benchmark;
 
 $benchmark = new Benchmark();
 
-$benchmark->setCount( 100 ); 
+$benchmark->setCount( 1000 ); 
 
 $benchmark->add( '1# Create and delete in Memcache', function ()
 {

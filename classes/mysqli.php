@@ -104,7 +104,9 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         $query = "SET SESSION wait_timeout = " . 8 * 3600 .";";
         if ( !mysqli_query( $this->db, $query ) )
             throw new Exception( $query );
-
+        $query = "SET SESSION interactive_timeout = " . 8 * 3600 .";";
+        if ( !mysqli_query( $this->db, $query ) )
+            throw new Exception( $query );
         // Backend setup
         if ( $this->dfsbackend === null )
         {
