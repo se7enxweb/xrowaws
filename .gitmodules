@@ -10,6 +10,6 @@
 [submodule "src/stash"]
 	path = src/stash
 	url = https://github.com/tedivm/Stash
-[submodule "src/Benchmark"]
-	path = src/Benchmark
-	url = https://github.com/pear/Benchmark.git
+[submodule "src/php-benchmark"]
+	path = src/php-benchmark
+	url = https://github.com/lavoiesl/php-benchmark.git
