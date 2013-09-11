@@ -126,8 +126,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }
         
         //Memcache implement(Stash)
-        try 
-        {
             $memINI = eZINI::instance( 'xrowaws.ini' );
             if($memINI->hasVariable("MemcacheSettings", "Host")
                AND $memINI->hasVariable("MemcacheSettings", "Port"))
@@ -140,12 +138,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             {
                 eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
             }
-        }catch(Exception $e){
-            eZDebugSetting::writeDebug( 'Memcache', "dfs::ctor('$e')" );
-        }
+
         
-        //S3 implement
-        try {
             $s3ini = eZINI::instance( 'xrowaws.ini' );
             $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
             $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
@@ -155,9 +149,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $this->s3 = Aws::factory(array('key' => $awskey,
                     'secret' => $secretkey,
                     'region' => Region::US_EAST_1))->get('s3');
-        }catch(Exception $e){
-            eZDebugSetting::writeDebug( 'Amazon S3', "dfs::ctor('$e')" );
-        }
     }
 
     /**

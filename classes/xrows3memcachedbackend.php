@@ -23,6 +23,7 @@ class xrowS3MemcachedBackend
 {
     public function __construct()
     {
+
         $mountPointPath = eZINI::instance( 'file.ini' )->variable( 'eZDFSClusteringSettings', 'MountPointPath' );
 
         if ( substr( $mountPointPath, -1 ) != '/' )
@@ -33,7 +34,7 @@ class xrowS3MemcachedBackend
         $this->filePermissionMask = octdec( eZINI::instance()->variable( 'FileSettings', 'StorageFilePermissions' ) );
         
         //Memcache implement(Stash)
-       try {
+
             $memINI = eZINI::instance( 'xrowaws.ini' );
             if($memINI->hasVariable("MemcacheSettings", "Host")
                AND $memINI->hasVariable("MemcacheSettings", "Port"))
@@ -46,24 +47,20 @@ class xrowS3MemcachedBackend
             {
                 eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
             }
-        }catch(Exception $e){
-            eZDebugSetting::writeDebug( 'Memcache', "dfs::ctor('$e')" );
-        }
-        
+
         //S3 implement
-        try {
+
             $s3ini = eZINI::instance( 'xrowaws.ini' );
             $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
             $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
+            $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
+            
             $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
             
             // Instantiate an S3 client
             $this->s3 = Aws::factory(array('key' => $awskey,
                                            'secret' => $secretkey,
-                                           'region' => Region::US_EAST_1))->get('s3');
-        }catch(Exception $e){
-            eZDebugSetting::writeDebug( 'Amazon S3', "dfs::ctor('$e')" );
-            }
+                                           'region' => $region))->get('s3');
     }
 
     /**
