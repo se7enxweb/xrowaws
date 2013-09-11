@@ -1,54 +1,71 @@
 <?php
 
+use Lavoiesl\PhpBenchmark\Benchmark;
 
-$bench = new Benchmark_Iterate;
+$benchmark = new Benchmark();
 
-// run the getDate function 10 times
-$bench->run(10, 'test1');
-$bench->run(10, 'test2');
-$bench->run(10, 'test3');
+$benchmark->setCount( 100 ); 
 
-// print the profiling information
-print_r($bench->get());
-
-function test1()
+$benchmark->add( '1# Create and delete in Memcache', function ()
 {
-    $file = "var/cache/test.cache";
-    copy( "extension/xrowaws/test/test.cache" , $file);
-    createanddelete( $file1 );
-}
-function test2()
-{
-    $file = "var/storage/test1.png";
-    copy( "extension/xrowaws/test/test1.png" , $file);
+    $file = "var/cache/test/test.". time() . ".cache";
+    copy( "extension/xrowaws/test/test.cache", $file );
     createanddelete( $file );
-}
-function createanddelete( $filepath )
+} );
+ 
+$benchmark->add( '2# Create and delete in S3', function ()
 {
-	$file = eZClusterFileHandler::instance( $filepath );
+    $file = "var/storage/test/test1.". time() . ".png";
+    copy( "extension/xrowaws/test/test1.png", $file );
+    createanddelete( $file );
+} );
 
-	$file->fileStore( $filepath, false, false, false);
 
-	$file->size();
-
-	unlink($filepath);
-
-	$file->fileFetch( $filepath );
-
-	$file->delete();
-}
-
-function test3()
+$benchmark->add( '3# StoreContents and Passthrough in Memcache', function ()
 {
-    $cssfile = "var/cache/test.cache";
-    $content = "/* CSS */";
+    $cssfile = "var/cache/test/test.". time() . ".cache" . time();
+    $content = "// CSS";
     $file = eZClusterFileHandler::instance( $cssfile );
-
+    
     $file->fileStoreContents( $cssfile, $content, 'ezjscore', 'text/css' );
-
+    
     if ( $file->fileExists( $cssfile ) )
     {
         $file->passthrough();
     }
+    $file->delete();
+} );
+
+$benchmark->add( '4# StoreContents and Passthrough in S3', function ()
+{
+    $cssfile = "var/storage/test/test.". time() . ".css";
+    $content = "// CSS";
+    $file = eZClusterFileHandler::instance( $cssfile );
+    
+    $file->fileStoreContents( $cssfile, $content, 'ezjscore', 'text/css' );
+    
+    if ( $file->fileExists( $cssfile ) )
+    {
+        $file->passthrough();
+    }
+    $file->delete();
+} );
+
+$benchmark->run();
+
+function createanddelete( $filepath )
+{
+    $file = eZClusterFileHandler::instance( $filepath );
+    
+    $file->fileStore( $filepath, false, false, false );
+    
+    $file->size();
+    
+    $file->exists();
+
+    unlink( $filepath );
+    
+    $file->fileFetch( $filepath );
+
     $file->delete();
 }

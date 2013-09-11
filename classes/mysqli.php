@@ -101,11 +101,11 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         eZDebug::accumulatorStop( 'mysql_cluster_connect' );
         if ( !$this->db )
             throw new eZClusterHandlerDBNoConnectionException( $serverString, self::$dbparams['user'], self::$dbparams['pass'] );
+        $query = "SET SESSION wait_timeout = " . 8 * 3600 .";";
+        if ( !mysqli_query( $this->db, $query ) )
+            throw new Exception( $query );
 
-        /*if ( !mysql_select_db( self::$dbparams['dbname'], $this->db ) )
-            throw new eZClusterHandlerDBNoDatabaseException( self::$dbparams['dbname'] );*/
-
-        // DFS setup
+        // Backend setup
         if ( $this->dfsbackend === null )
         {
             $this->dfsbackend = new xrowS3MemcachedBackend();
@@ -454,14 +454,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         
         if(strpos($filePath,'/storage/') !== FALSE )
         {   
-            try
-            {
-                $this->s3->deleteObject(array('Bucket' => $this->bucket,
-                                              'Key' => $filePath ));
-            }catch(S3Exception $e)
-            {
-                echo "There was an error deletting the object.$filePath\n";
-            }
+            $this->s3->deleteObject(array('Bucket' => $this->bucket,
+                                          'Key' => $filePath ));
         }
         else
         {

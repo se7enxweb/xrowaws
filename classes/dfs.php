@@ -27,6 +27,7 @@ class xrowS3FileHandlerDFSBackend
 
         $ini = eZINI::instance( 'xrowaws.ini' );
         $awskey = $ini->variable( 'Settings', 'AWSKey' );
+        $region = $ini->hasVariable( 'Settings', 'AWSRegion' ) ? $ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
         $secretkey = $ini->variable( 'Settings', 'SecretKey' );
         $this->bucket = $ini->variable( 'Settings', 'Bucket' );
 
@@ -36,32 +37,11 @@ class xrowS3FileHandlerDFSBackend
 array(
   'key'    => $awskey,
   'secret' => $secretkey,
-  'region' => Region::US_EAST_1
+  'region' => $region
 )
 
 )->get('s3');
-        
-        // Upload a publicly accessible file. The file size, file type, and MD5 hash are automatically calculated by the SDK
-       /*
 
-         try {
-            $s3->putObject(array(
-            'Bucket' => 'my-bucket',
-            'Key'    => 'my-object',
-            'Body'   => fopen('/path/to/file', 'r'),
-            'ACL'    => 'public-read',
-            ));
-        } catch (S3Exception $e) {
-            echo "There was an error uploading the file.\n";
-        }
-        
-        
-        try {
-    $s3->upload('my-bucket', 'my-object', fopen('/path/to/file', 'r'), 'public-read');
-} catch (S3Exception $e) {
-    echo "There was an error uploading the file.\n";
-}
-*/
     }
 
     /**
@@ -110,16 +90,7 @@ array(
         }
         $srcFilePath = $this->makeDFSPath( $srcFilePath );
 
-        if ( file_exists( dirname( $dstFilePath ) ) )
-        {
-            $ret = copy( $srcFilePath, $dstFilePath );
-            if ( $ret )
-                $this->fixPermissions( $dstFilePath );
-        }
-        else
-        {
-            $ret = $this->createFile( $dstFilePath, file_get_contents( $srcFilePath ) );
-        }
+        $ret = $this->createFileLocal( $dstFilePath, $this->getContents( $srcFilePath ) );
 
         $this->accumulatorStop();
 
@@ -326,6 +297,16 @@ array(
     protected function fixPermissions( $filePath )
     {
         chmod( $filePath, $this->filePermissionMask );
+    }
+
+    protected function createFileLocal( $filePath, $contents, $atomic = true )
+    {
+        $createResult = eZFile::create( basename( $filePath ), dirname( $filePath ), $contents, $atomic );
+    
+        if ( $createResult )
+            $this->fixPermissions( $filePath );
+    
+        return $createResult;
     }
 
     protected function createFile( $filePath, $contents, $atomic = true )

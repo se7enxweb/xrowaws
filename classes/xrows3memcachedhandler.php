@@ -57,6 +57,10 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     function __construct( $filePath = false )
     {
+        if ( $filePath === null )
+        {
+            throw new Exception( "Filepath not given." );
+        }
         if ( self::$nonExistantStaleCacheHandling === null )
         {
             $fileINI = eZINI::instance( 'file.ini' );
@@ -202,7 +206,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
     {
         $filePath = eZDBFileHandler::cleanPath( $filePath );
         eZDebugSetting::writeDebug( 'kernel-clustering', "dfs::fileStore( '$filePath' )" );
-        eZLog::write('copy: ' . $filePath, 'memcache_filestore123.log');
         
         if ( $scope === false )
             $scope = 'UNKNOWN_SCOPE';
@@ -283,7 +286,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
     function fileFetch( $filePath )
     {
         $filePath = eZDBFileHandler::cleanPath( $filePath );
-        eZLog::write('Fetch: ' .$fileFetch, 'memcache_fielFetch_handler.log');
         
         eZDebugSetting::writeDebug( 'kernel-clustering', "dfs::fileFetch( '$filePath' )" );
 
@@ -1345,7 +1347,7 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
         // unhandled error case, should not happen
         else
         {
-            eZLog::write( "An error occured starting cache generation on '$generatingFilePath'", 'cluster.log' );
+            eZDebugSetting::writeDebug( 'kernel-clustering', "An error occured starting cache generation on '$generatingFilePath'", 'cluster.log' );
             return false;
         }
     }
