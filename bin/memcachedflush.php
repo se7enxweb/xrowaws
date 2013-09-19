@@ -17,3 +17,6 @@ $driver = new Memcache(array('servers' => array($mem_host, $mem_port)));
 $pool = new Pool($driver);
 $pool->flush();
 
+$db = eZDB::instance();
+$db->query("USE silentcaldfscluster");
+$db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
