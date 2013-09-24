@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * File containing the eZDFSFileHandlerMySQLiBackend class.
  *
@@ -912,7 +912,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$metaData )
             return false;
 
-        // @todo Catch an exception
+		// @todo Catch an exception
         $this->dfsbackend->passthrough( $filePath, $startOffset, $length );
 
         return true;
@@ -1008,10 +1008,32 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
      */
     function _store( $filePath, $datatype, $scope, $fname = false )
     {
-        if ( !is_readable( $filePath ) )
+        /*if ( !is_readable( $filePath ) )
         {
             eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
             return;
+        }*/
+
+        if(strpos($filePath,'/storage/') !== FALSE )
+        {
+            $s3result= $this->s3->doesObjectExist( $this->bucket, $filePath);
+        
+            if(!$s3result)
+            {
+                eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
+                return;
+            }
+        }else{
+            $item = $this->pool->getItem($filePath);
+            $item->get($filePath);
+            if($item->isMiss())
+            {
+                if ( !is_readable( $filePath ) )
+                {
+                     eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
+                     return;
+                }
+            }
         }
         
         if ( $fname )
@@ -1137,20 +1159,11 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                    'mtime' => $curTime,
                    'expired' => ( $curTime < 0 ) ? 1 : 0 );
         
-       /* if(stristr($filePath,'.generating') !== FALSE )
-        {
-            $file_key_temp = substr($filePath,0,-11);
-        }else{
-            $file_key_temp = $filePath;
-        }
-        
-        $filePath_key =$file_key_temp ."metadata";*/
-        $filePath_key =$filePath;
+        $filePath_key =$filePath . "metadata";
         $item = $this->pool->getItem($filePath_key);
         $item->lock();
         $item->set($update_array);
 
-        eZLog::write('row: ' . $filePath ."|".$contents, 'memcache_storeContentInner.log');
         if ( !$this->dfsbackend->createFileOnDFS( $filePath, $contents ) )
         {
             return $this->_fail( "Failed to open DFS://$filePath for writing" );

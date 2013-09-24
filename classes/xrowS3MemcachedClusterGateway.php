@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 use Stash\Driver\Memcache;
 use Stash\Item;
 use Stash\Pool;
@@ -125,12 +125,19 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         else
         {
             $item = $pool->getItem($dfsFilePath);
-            
+            $item->get($dfsFilePath);
             if($item->isMiss())
             {
                 if ( !file_exists( $dfsFilePath ) )
-                    throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
-    
+                {
+                    $pool->flush();
+
+                    $db = eZDB::instance();
+                    $db->query("USE silentcaldfscluster");
+                    $db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
+                    //throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
+                }
+
                 $fp = fopen( $dfsFilePath, 'rb' );
                 
                 if ( $offset !== false && @fseek( $fp, $offset ) === -1 )

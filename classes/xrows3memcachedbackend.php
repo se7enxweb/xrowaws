@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * File containing the eZDFSFileHandlerDFSBackend class.
  *
@@ -251,25 +251,82 @@ class xrowS3MemcachedBackend
      * @return bool true, or false if operation failed
      */
     public function passthrough( $filePath, $startOffset = 0, $length = false )
-    {
+    { 
         $file = $this->makeDFSPath( $filePath );
-        $item = $this->pool->getItem($file);
-    if(strpos($file,'/storage/') !== FALSE )
+
+        if(strpos($file,'/storage/') !== FALSE )
+        {
+            try
             {
-                $result = $this->s3->getObject(array('Bucket' => $this->bucket, 'Key' => $file));
-                $contentdata = (string) $result['Body'];
-                echo $contentdata;
-                return true;
+                $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
+                                                     'Key' => $file));
+            }catch(S3Exception $e)
+            {
+                echo "There was an error getting the object.$file\n";
             }
-            else
+            $contentdata = (string) $result['Body'];
+           
+            if($length != FALSE)
+            {
+                echo substr($contentdata,$startOffset,$length);
+            }else{
+                echo substr($contentdata,$startOffset);
+            }
+            return true;
+        }
+        else
+        {
+            $item = $this->pool->getItem($file);
+            $item->get($file);
+            if($item->isMiss())
+            {
+                if ( !file_exists( $file ) )
+                {
+                    eZDebug::writeError( "'$file' does not exist", __METHOD__ );
+                    return false;
+                }
+                if ( ( $fp = fopen( $file, 'rb' ) ) === false )
+                {
+                    eZDebug::writeError( "An error occured opening '$file' for reading", __METHOD__ );
+                    return false;
+                }
+                
+                $fileSize = filesize( $file );
+                
+                // an offset has been given: move the pointer to that offset if it seems valid
+                if ( $startOffset !== false && $startOffset <= $fileSize && fseek( $fp, $startOffset ) === -1 )
+                {
+                    eZDebug::writeError( "Error while setting offset on '{$file}'", __METHOD__ );
+                    return false;
+                }
+                
+                $transferred = $startOffset;
+                $packetSize = self::READ_PACKET_SIZE;
+                $endOffset = ( $length === false ) ? $fileSize - 1 : $length + $startOffset - 1;
+                
+                while ( !feof( $fp ) && $transferred < $endOffset + 1 )
+                {
+                    if ( $transferred + $packetSize > $endOffset + 1 )
+                    {
+                        $packetSize = $endOffset + 1 - $transferred;
+                    }
+                    echo fread( $fp, $packetSize );
+                    $transferred += $packetSize;
+                }
+                fclose( $fp );
+                
+                $item = $this->pool->getItem($file);
+                $item->lock();
+                $item->set(fread( $fp, $packetSize ));
+                
+                return true;
+            }else
             {
                 $item = $this->pool->getItem($file);
-                if(!$item->isMiss())
-                {
-                    return true;
-                    echo $item->get($file);
-                }
+                echo $item->get($file);
+                return true;
             }
+        }
     }
     /**
      * Returns the binary content of $filePath from DFS
@@ -322,17 +379,8 @@ class xrowS3MemcachedBackend
         $this->accumulatorStart();
         $filePath = $this->makeDFSPath( $filePath );
         
-        if(strpos($filePath,'/storage/') !== FALSE )
-        {
-            $ret = $this->createFile( $filePath, $contents, false );
-        }else
-        {
-             $item = $this->pool->getItem($filePath);
-             $item->lock();
-             $item->set($contents);
-             $ret = true;
-        }
-        
+        $ret = $this->createFile( $filePath, $contents, false );
+
         $this->accumulatorStop();
 
         return $ret;
@@ -413,7 +461,7 @@ class xrowS3MemcachedBackend
             $item->get($filePath);
             if($item->isMiss())
             {
-                return false;
+                return file_exists( $this->makeDFSPath( $filePath ) );
             }
             else
             {
