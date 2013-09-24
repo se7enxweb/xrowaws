@@ -1014,7 +1014,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             return;
         }*/
 
-        if(strpos($filePath,'/storage/') !== FALSE )
+        /*if(strpos($filePath,'/storage/') !== FALSE )
         {
             $s3result= $this->s3->doesObjectExist( $this->bucket, $filePath);
         
@@ -1023,7 +1023,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                 eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
                 return;
             }
-        }else{
+        }else{*/
             $item = $this->pool->getItem($filePath);
             $item->get($filePath);
             if($item->isMiss())
@@ -1034,7 +1034,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                      return;
                 }
             }
-        }
+       // }
         
         if ( $fname )
             $fname .= "::_store($filePath, $datatype, $scope)";
