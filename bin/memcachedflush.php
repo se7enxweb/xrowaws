@@ -17,6 +17,15 @@ $driver = new Memcache(array('servers' => array($mem_host, $mem_port)));
 $pool = new Pool($driver);
 $pool->flush();
 
+$dbINI = eZINI::instance( 'file.ini' );
+if($memINI->hasVariable("eZDFSClusteringSettings", "DBName"))
+{
+    $db_name = $memINI->variable( "eZDFSClusteringSettings", "DBName" );
+}
+
 $db = eZDB::instance();
-$db->query("USE silentcaldfscluster");
+
+$query = "USE ". $db_name;
+
+$db->query($query);
 $db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
