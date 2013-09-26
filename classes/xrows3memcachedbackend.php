@@ -80,7 +80,7 @@ class xrowS3MemcachedBackend
         if(strpos($srcFilePath,'/storage/') !== FALSE )
         {
             $result = $this->s3->getObject(array('Bucket' => $this->bucket,
-                                                     'Key' => $srcFilePath));
+                                                    'Key' => $srcFilePath));
 
             
             $contentdata = (string) $result['Body'];
@@ -201,8 +201,10 @@ class xrowS3MemcachedBackend
                     {
                         $this->s3->deleteObject(array('Bucket' => $this->bucket,
                                                       'Key' => $file ));
+                        $ret = true;
                     }catch(S3Exception $e)
                     {
+                        $ret = false;
                         echo "There was an error deletting the object.$file\n";
                     }
                 }
@@ -210,21 +212,27 @@ class xrowS3MemcachedBackend
                 {
                     $item = $this->pool->getItem($file);
                     $item->clear();
+
+                    $dfsPath = $this->makeDFSPath( $file );
+                    $ret = @unlink( $dfsPath );
+
+                    if ( $ret )
+                        eZClusterFileHandler::cleanupEmptyDirectories( $dfsPath );
                 }
             }
-            
-            $ret = true;
         }
         else
         {
-            if(strpos($file,'/storage/') !== FALSE )
+            if(strpos($filePath,'/storage/') !== FALSE )
             {
                 try
                 {
                     $this->s3->deleteObject(array('Bucket' => $this->bucket,
                                                   'Key' => $filePath));
+                    $ret=true;
                 }catch(S3Exception $e)
                 {
+                    $ret=false;
                     echo "There was an error deletting the object.$file\n";
                 }
             }
@@ -232,11 +240,15 @@ class xrowS3MemcachedBackend
             {
                 $item = $this->pool->getItem($filePath);
                 $item->clear();
+
+                $dfsPath = $this->makeDFSPath( $filePath );
+                $ret = @unlink( $dfsPath );
+
+                if ( $ret )
+                    eZClusterFileHandler::cleanupEmptyDirectories( $dfsPath );
             }
-           $ret=true;
         }
         
-
         $this->accumulatorStop();
 
         return $ret;
@@ -253,26 +265,39 @@ class xrowS3MemcachedBackend
     public function passthrough( $filePath, $startOffset = 0, $length = false )
     { 
         $file = $this->makeDFSPath( $filePath );
-
+        $range= 'bytes='.$startOffset.'-'.$length;
         if(strpos($file,'/storage/') !== FALSE )
         {
-            try
+            if($length !== false)
             {
-                $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
-                                                     'Key' => $file));
-            }catch(S3Exception $e)
-            {
-                echo "There was an error getting the object.$file\n";
-            }
-            $contentdata = (string) $result['Body'];
-           
-            if($length != FALSE)
-            {
-                echo substr($contentdata,$startOffset,$length);
+                try
+                {
+                    $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
+                                                         'Key' => $file,
+                                                         'Range'  => $range));
+                }catch(S3Exception $e)
+                {
+                    echo "There was an error getting the object.$file\n";
+                }
             }else{
-                echo substr($contentdata,$startOffset);
+                try
+                {
+                    $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
+                                                            'Key' => $file));
+                }catch(S3Exception $e)
+                {
+                    echo "There was an error getting the object.$file\n";
+                }
             }
-            return true;
+
+            if(isset($result))
+            { 
+                $contentdata = (string) $result['Body'];
+                echo $contentdata;
+                return true;
+            }else{
+                return false;
+            }
         }
         else
         {
@@ -304,6 +329,8 @@ class xrowS3MemcachedBackend
                 $packetSize = self::READ_PACKET_SIZE;
                 $endOffset = ( $length === false ) ? $fileSize - 1 : $length + $startOffset - 1;
                 
+                $item = $this->pool->getItem($file);
+
                 while ( !feof( $fp ) && $transferred < $endOffset + 1 )
                 {
                     if ( $transferred + $packetSize > $endOffset + 1 )
@@ -311,14 +338,13 @@ class xrowS3MemcachedBackend
                         $packetSize = $endOffset + 1 - $transferred;
                     }
                     echo fread( $fp, $packetSize );
+                    
+                    $item->lock();
+                    $item->set(fread( $fp, $packetSize ));
+
                     $transferred += $packetSize;
                 }
                 fclose( $fp );
-                
-                $item = $this->pool->getItem($file);
-                $item->lock();
-                $item->set(fread( $fp, $packetSize ));
-                
                 return true;
             }else
             {
@@ -378,11 +404,8 @@ class xrowS3MemcachedBackend
     {
         $this->accumulatorStart();
         $filePath = $this->makeDFSPath( $filePath );
-        
         $ret = $this->createFile( $filePath, $contents, false );
-
         $this->accumulatorStop();
-
         return $ret;
     }
 
@@ -400,7 +423,7 @@ class xrowS3MemcachedBackend
         $oldPath = $this->makeDFSPath( $oldPath );
         $newPath = $this->makeDFSPath( $newPath );
 
-        if(strpos($filePath,'/storage/') !== FALSE )
+        if(strpos($oldPath,'/storage/') !== FALSE )
         {
             try
             {
@@ -428,7 +451,13 @@ class xrowS3MemcachedBackend
             $item_new->lock();
             $item_new->set($item_old->get($oldPath));
             $item_old->clear();
-            $ret = true;
+
+            $ret = eZFile::rename( $oldPath, $newPath, true );
+
+            if ( $ret )
+            eZClusterFileHandler::cleanupEmptyDirectories( $oldPath );
+
+           // $ret = true;
         }
         
         $this->accumulatorStop();

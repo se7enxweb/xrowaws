@@ -128,29 +128,29 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }
         
         //Memcache implement(Stash)
-            $memINI = eZINI::instance( 'xrowaws.ini' );
-            if($memINI->hasVariable("MemcacheSettings", "Host")
+        $memINI = eZINI::instance( 'xrowaws.ini' );
+        if($memINI->hasVariable("MemcacheSettings", "Host")
                AND $memINI->hasVariable("MemcacheSettings", "Port"))
-            {
-                $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
-                $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
-                $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-                $this->pool = new Pool($this->driver);
-            }else
-            {
-                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
-            }
-
+        {
+            $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+            $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
+            $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+            $this->pool = new Pool($this->driver);
+        }else
+        {
+            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+        }
         
-            $s3ini = eZINI::instance( 'xrowaws.ini' );
-            $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
-            $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
-            $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
+        $s3ini = eZINI::instance( 'xrowaws.ini' );
+        $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
+        $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
+        $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
+        $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
             
-            // Instantiate an S3 client
-            $this->s3 = Aws::factory(array('key' => $awskey,
-                    'secret' => $secretkey,
-                    'region' => Region::US_EAST_1))->get('s3');
+        // Instantiate an S3 client
+        $this->s3 = Aws::factory(array('key' => $awskey,
+                                       'secret' => $secretkey,
+                                       'region' => $region))->get('s3');
     }
 
     /**
@@ -297,6 +297,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( mysqli_affected_rows( $this->db ) == 1 )
         {
             $this->dfsbackend->delete( $filePath );
+            $item = $this->pool->getItem($filePath);
+            $item->clear();
         }
 
         $this->eventHandler->notify( 'cluster/deleteFile', array( $filePath ) );
@@ -351,7 +353,13 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             $this->_rollback( $fname );
             return $this->_fail( "Selecting file metadata by like statement $like failed" );
+        }else{
+            $mem_key = $this->_quote( $like, true ) . "metadata";
+            $item = $this->pool->getItem($mem_key);
+            $item->lock();
+            $item->set($this->_query( $selectSQL, $fname ));
         }
+
         $resultCount = mysqli_num_rows( $res );
 
         // if there are no results, we can just return 0 and stop right here
@@ -912,7 +920,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$metaData )
             return false;
 
-		// @todo Catch an exception
+        // @todo Catch an exception
         $this->dfsbackend->passthrough( $filePath, $startOffset, $length );
 
         return true;
@@ -1014,13 +1022,13 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             return;
         }*/
 
-        /*if(strpos($filePath,'/storage/') !== FALSE )
+      /*  if(strpos($filePath,'/storage/') !== FALSE )
         {
             $s3result= $this->s3->doesObjectExist( $this->bucket, $filePath);
         
             if(!$s3result)
             {
-                eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
+                eZDebug::writeError( "Unable to store file '$filePath' on S3 since it is not readable.", __METHOD__ );
                 return;
             }
         }else{*/
@@ -1030,7 +1038,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             {
                 if ( !is_readable( $filePath ) )
                 {
-                     eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
+                     eZDebug::writeError( "Unable to store file '$filePath' on Memcached since it is not readable.", __METHOD__ );
                      return;
                 }
             }
@@ -1158,7 +1166,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                    'size' => $contentLength,
                    'mtime' => $curTime,
                    'expired' => ( $curTime < 0 ) ? 1 : 0 );
-        
+
         $filePath_key =$filePath . "metadata";
         $item = $this->pool->getItem($filePath_key);
         $item->lock();

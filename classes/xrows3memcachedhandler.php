@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * File containing the eZDFSFileHandler class.
  *
@@ -23,12 +23,6 @@
  *
  * @since 4.2.0
  */
-
-use Stash\Driver\Memcache;
-use Stash\Item;
-use Stash\Pool;
-
-
 class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabaseBasedClusterFileHandler
 {
     /**
@@ -57,11 +51,12 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     function __construct( $filePath = false )
     {
-        if ( $filePath === null )
+	    if ( $filePath === null )
         {
             throw new Exception( "Filepath not given." );
         }
-        if ( self::$nonExistantStaleCacheHandling === null )
+        
+		if ( self::$nonExistantStaleCacheHandling === null )
         {
             $fileINI = eZINI::instance( 'file.ini' );
             self::$nonExistantStaleCacheHandling = $fileINI->variable( "ClusteringSettings", "NonExistantStaleCacheHandling" );
@@ -114,25 +109,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
         }
 
         $this->filePath = $filePath;
-        
-        //Memcache implement(Stash)
-        try {
-            $memINI = eZINI::instance( 'xrowaws.ini' );
-            if($memINI->hasVariable("MemcacheSettings", "Host")
-               AND $memINI->hasVariable("MemcacheSettings", "Port"))
-            {
-                $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
-                $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
-                $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-                $this->pool = new Pool($this->driver);
-            }else
-            {
-                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
-            }
-        }catch(Exception $e){
-            eZDebugSetting::writeDebug( 'Memcache', "dfs::ctor('$e')" );
-        }
-        
     }
 
     /**
@@ -286,7 +262,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
     function fileFetch( $filePath )
     {
         $filePath = eZDBFileHandler::cleanPath( $filePath );
-        
         eZDebugSetting::writeDebug( 'kernel-clustering', "dfs::fileFetch( '$filePath' )" );
 
         return self::$dbbackend->_fetch( $filePath );
@@ -744,7 +719,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     public function isFileExpired( $fname, $mtime, $expiry, $curtime, $ttl )
     {  
-        
         if ( $mtime == false or $mtime < 0 )
         {
             return true;
@@ -781,7 +755,6 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      */
     public function isLocalFileExpired( $expiry, $curtime, $ttl )
     {
-    	
         return self::isFileExpired( $this->filePath, @filemtime( $this->filePath ), $expiry, $curtime, $ttl );
     }
 
@@ -905,7 +878,8 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
 
         if ( self::LOCAL_CACHE )
         {
-            eZDebugSetting::writeDebug( 'kernel-clustering',"Creating local copy of the file", "dfs::storeCache( '{$this->filePath}' )" );
+            eZDebugSetting::writeDebug( 'kernel-clustering',
+                "Creating local copy of the file", "dfs::storeCache( '{$this->filePath}' )" );
             eZFile::create( basename( $this->filePath ), dirname( $this->filePath ), $binaryData, true );
         }
 

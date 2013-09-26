@@ -49,8 +49,6 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
 
         if($item->isMiss())
         {
-            $item->lock();
-            
             if ( !$res = mysqli_query( $this->db, $sql ) )
                 throw new RuntimeException( "Failed to fetch file metadata for '$filepath' " . "(error #". mysqli_errno( $this->db ).": " . mysqli_error( $this->db ) );
     
@@ -98,12 +96,13 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             $s3ini = eZINI::instance( 'xrowaws.ini' );
             $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
             $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
+            $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
             $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
         
             // Instantiate an S3 client
             $this->s3 = Aws::factory(array('key' => $awskey,
                     'secret' => $secretkey,
-                    'region' => Region::US_EAST_1))->get('s3');
+                    'region' => $region))->get('s3');
         }catch(Exception $e){
             eZDebugSetting::writeDebug( 'Amazon S3', "dfs::ctor('$e')" );
         }
@@ -113,7 +112,7 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             try
             {
                 $result = $this->s3->getObject(array('Bucket' => $this->bucket,
-                                                     'Key' => $dfsFilePath));
+                                                        'Key' => $dfsFilePath));
             }catch(S3Exception $e)
             {
                 echo "There was an error getting the object.$dfsFilePath\n";
@@ -145,6 +144,8 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
                 
                 if ( $offset === false && $length === false )
                 {    
+                    $item->lock();
+                    $item->set(fpassthru( $fp ));
                     fpassthru( $fp );
                 }
                 else
