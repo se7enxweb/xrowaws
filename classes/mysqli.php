@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * File containing the eZDFSFileHandlerMySQLiBackend class.
  *
@@ -138,16 +138,25 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $this->pool = new Pool($this->driver);
         }else
         {
-            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+            $fileINI = eZINI::instance( 'file.ini' );
+           if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
+           {
+               $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
+               $this->mem_port = 11211;
+               $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $this->pool = new Pool($this->driver);
+           }else{
+               eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+           }
         }
         
+        // Instantiate an S3 client
         $s3ini = eZINI::instance( 'xrowaws.ini' );
         $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
         $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
         $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
         $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
             
-        // Instantiate an S3 client
         $this->s3 = Aws::factory(array('key' => $awskey,
                                        'secret' => $secretkey,
                                        'region' => $region))->get('s3');
@@ -455,8 +464,12 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         
         if(strpos($filePath,'/storage/') !== FALSE )
         {   
-            $this->s3->deleteObject(array('Bucket' => $this->bucket,
-                                          'Key' => $filePath ));
+            try {
+                  $this->s3->deleteObject(array('Bucket' => $this->bucket,
+                                                'Key' => $filePath ));
+                } catch (Exception $e) {
+                     eZDebug::writeError( "File '$filePath' does not exist while trying to delete.", __METHOD__ );
+                }
         }
         else
         {
@@ -756,6 +769,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
 
         if ( !$this->dfsbackend->copyFromDFS( $filePath, $tmpFilePath ) )
         {
+
             eZDebug::writeError("Failed copying DFS://$filePath to FS://$tmpFilePath ");
             return false;
         }
@@ -764,20 +778,16 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         clearstatcache();
 
         if(strpos($tmpFilePath,'/storage/') !== FALSE )
-        { 
-            /*try
+        {
+            try
             {
                 $result = $this->s3->getObject(array('Bucket' => $this->bucket,
-                                                     'Key' => $tmpFilePath));
-            }catch(S3Exception $e)
-            {
+                                                     'Key' => $filePath));
+            }catch(S3Exception $e){
                 echo "There was an error getting the object.$srcFilePath\n";
             }
             
-            eZLog::write('Fetch: ' .$metaData['size']."|".$result, 'memcache_info1.log');
-            
-            $contentdata = (string) $result['Body'];*/
-            $tmpSize= $metaData['size'];
+            $tmpSize = (int)$result['ContentLength'];
         }else{
             $tmpSize = filesize( $tmpFilePath );
         } 
@@ -785,6 +795,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         // @todo Throw an exception
         if ( $tmpSize != $metaData['size'] )
         {
+
             eZDebug::writeError( "Size ($tmpSize) of written data for file '$tmpFilePath' does not match expected size " . $metaData['size'], __METHOD__ );
             return false;
         }
@@ -842,47 +853,34 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
      *                     database.
      */
     function _fetchMetadata( $filePath, $fname = false )
-    {//$this->pool->flush();
+    {
         $metadata = $this->eventHandler->filter( 'cluster/loadMetadata', $filePath );
-        
+        if ( is_array( $metadata ) )
+            return $metadata;
+
         $filePath_key =$filePath ."metadata";
         
         $item = $this->pool->getItem($filePath_key);
-        
-        if ( is_array( $metadata ) )
+        $meta_info=$item->get($filePath_key);
+        if( !$item->isMiss() )
         {
-            $item->get($filePath_key);
-            if($item->isMiss())
+            $metadata = $meta_info;
+        }
+        else
+        {
+            if ( $fname )
+                $fname .= "::_fetchMetadata($filePath)";
+            else
+                $fname = "_fetchMetadata($filePath)";
+            $sql = "SELECT * FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath );
+            $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
+            if( is_array( $metadata ) )
             {
                 $item->lock();
                 $item->set($metadata);
-                return $metadata;
-            }else {
-                $metadata = $item->get($filePath_key);
-                return $metadata;
             }
         }
 
-        if ( $fname )
-            $fname .= "::_fetchMetadata($filePath)";
-        else
-            $fname = "_fetchMetadata($filePath)";
-        $sql = "SELECT * FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath );
-        $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
-        
-        
-         
-        $item->get($filePath_key);
-        if($item->isMiss())
-        {
-            $item->lock();
-            $item->set($metadata);
-        }else{
-            $item->lock();
-            $item->set($metadata);
-            $metadata = $item->get($filePath_key);
-        }
-        
         if ( is_array( $metadata ) )
             $this->eventHandler->notify( 'cluster/storeMetadata', array( $metadata ) );
 
@@ -1016,34 +1014,12 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
      */
     function _store( $filePath, $datatype, $scope, $fname = false )
     {
-        /*if ( !is_readable( $filePath ) )
+        if ( !is_readable( $filePath ) )
         {
             eZDebug::writeError( "Unable to store file '$filePath' since it is not readable.", __METHOD__ );
             return;
-        }*/
+        }
 
-      /*  if(strpos($filePath,'/storage/') !== FALSE )
-        {
-            $s3result= $this->s3->doesObjectExist( $this->bucket, $filePath);
-        
-            if(!$s3result)
-            {
-                eZDebug::writeError( "Unable to store file '$filePath' on S3 since it is not readable.", __METHOD__ );
-                return;
-            }
-        }else{*/
-            $item = $this->pool->getItem($filePath);
-            $item->get($filePath);
-            if($item->isMiss())
-            {
-                if ( !is_readable( $filePath ) )
-                {
-                     eZDebug::writeError( "Unable to store file '$filePath' on Memcached since it is not readable.", __METHOD__ );
-                     return;
-                }
-            }
-       // }
-        
         if ( $fname )
             $fname .= "::_store($filePath, $datatype, $scope)";
         else
@@ -1051,7 +1027,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
 
         $this->_protect( array( $this, '_storeInner' ), $fname,
                          $filePath, $datatype, $scope, $fname );
-
+        
         $this->eventHandler->notify( 'cluster/deleteFile', array( $filePath ) );
     }
 
@@ -1103,6 +1079,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
        
         $item->lock();
         $item->set($insert_array);
+
+
         // copy given $filePath to DFS
         
         if ( !$this->dfsbackend->copyToDFS( $filePath ) )

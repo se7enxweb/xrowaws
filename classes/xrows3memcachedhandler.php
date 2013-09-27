@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * File containing the eZDFSFileHandler class.
  *
@@ -190,7 +190,7 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
             $datatype = 'misc';
 
         self::$dbbackend->_store( $filePath, $datatype, $scope );
-
+        
         if ( $delete )
             @unlink( $filePath );
     }

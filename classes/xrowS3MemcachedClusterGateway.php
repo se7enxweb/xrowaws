@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 use Stash\Driver\Memcache;
 use Stash\Item;
 use Stash\Pool;

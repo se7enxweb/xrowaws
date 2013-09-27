@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * File containing the eZDFSFileHandlerDFSBackend class.
  *
@@ -123,9 +123,11 @@ class xrowS3MemcachedBackend
             $contentdata = (string) $result['Body'];
             $ret = $this->createFileOnLFS( $dstFilePath,$contentdata );
         }else{
+
             $srcFilePath = $this->makeDFSPath( $srcFilePath );
-            $item_src = $this->pool->getItem($srcFilePath); 
-            $ret = $this->createFile( $dstFilePath, $item_src->get($srcFilePath) );
+            $item_src = $this->pool->getItem($srcFilePath);
+
+            $ret = $this->createFileOnLFS( $dstFilePath, $item_src->get($srcFilePath) );
         }
         $this->accumulatorStop();
 
