@@ -18,14 +18,11 @@ $pool = new Pool($driver);
 $pool->flush();
 
 $dbINI = eZINI::instance( 'file.ini' );
-if($memINI->hasVariable("eZDFSClusteringSettings", "DBName"))
+if($dbINI->hasVariable("eZDFSClusteringSettings", "DBName"))
 {
-    $db_name = $memINI->variable( "eZDFSClusteringSettings", "DBName" );
+    $db_name = $dbINI->variable( "eZDFSClusteringSettings", "DBName" );
+    $db = eZDB::instance();
+    $query = "USE ". $db_name;
+    $db->query($query);
+    $db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
 }
-
-$db = eZDB::instance();
-
-$query = "USE ". $db_name;
-
-$db->query($query);
-$db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
