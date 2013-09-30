@@ -45,7 +45,16 @@ class xrowS3MemcachedBackend
                 $this->pool = new Pool($this->driver);
             }else
             {
-                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+                $fileINI = eZINI::instance( 'file.ini' );
+                if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
+                {
+                    $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
+                    $this->mem_port = 11211;
+                    $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+                    $this->pool = new Pool($this->driver);
+                }else{
+                    eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+                }
             }
 
         //S3 implement
@@ -267,11 +276,12 @@ class xrowS3MemcachedBackend
     public function passthrough( $filePath, $startOffset = 0, $length = false )
     { 
         $file = $this->makeDFSPath( $filePath );
-        $range= 'bytes='.$startOffset.'-'.$length;
+        
         if(strpos($file,'/storage/') !== FALSE )
         {
             if($length !== false)
             {
+			    $range= 'bytes='.$startOffset.'-'.$length;
                 try
                 {
                     $result = $this->s3->getObject(array('Bucket' => $this->bucket, 

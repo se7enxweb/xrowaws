@@ -40,7 +40,16 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         }
         else
         {
-            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+            $fileINI = eZINI::instance( 'file.ini' );
+            if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
+            {
+               $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
+               $this->mem_port = 11211;
+               $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $this->pool = new Pool($this->driver);
+            }else{
+               eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+            }
         }
         
         $filePath_key = $filepath . "metadata";
@@ -87,7 +96,16 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         }
         else
         {
-            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+            $fileINI = eZINI::instance( 'file.ini' );
+            if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
+            {
+               $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
+               $this->mem_port = 11211;
+               $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $this->pool = new Pool($this->driver);
+            }else{
+               eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+            }
         }
         
         //S3 implement
@@ -109,13 +127,27 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         
         if(strpos($dfsFilePath,'/storage/') !== FALSE )
         {
-            try
+            if($length !== false)
             {
-                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
-                                                        'Key' => $dfsFilePath));
-            }catch(S3Exception $e)
-            {
-                echo "There was an error getting the object.$dfsFilePath\n";
+                $range= 'bytes='.$offset.'-'.$length;
+                try
+                {
+                    $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
+                                                         'Key' => $dfsFilePath,
+                                                         'Range'  => $range));
+                }catch(S3Exception $e)
+                {
+                    echo "There was an error getting the object.$dfsFilePath\n";
+                }
+            }else{
+                try
+                {
+                    $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
+                                                            'Key' => $dfsFilePath));
+                }catch(S3Exception $e)
+                {
+                    echo "There was an error getting the object.$dfsFilePath\n";
+                }
             }
         
             $contentdata = (string) $result['Body'];
