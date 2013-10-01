@@ -136,8 +136,8 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
                                                          'Key' => $dfsFilePath,
                                                          'Range'  => $range));
                 }catch(S3Exception $e)
-                {
-                    echo "There was an error getting the object.$dfsFilePath\n";
+                {  
+                    throw new RuntimeException( "There was an error getting the object.$dfsFilePath\n" );
                 }
             }else{
                 try
@@ -146,7 +146,7 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
                                                             'Key' => $dfsFilePath));
                 }catch(S3Exception $e)
                 {
-                    echo "There was an error getting the object.$dfsFilePath\n";
+                    throw new RuntimeException( "There was an error getting the object.$dfsFilePath\n" );
                 }
             }
         
@@ -159,6 +159,8 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             $item->get($dfsFilePath);
             if($item->isMiss())
             {
+                throw new RuntimeException( "There was an error getting the object.$dfsFilePath\n" );
+/*
                 if ( !file_exists( $dfsFilePath ) )
                 {
                     $pool->flush();
@@ -168,7 +170,7 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
                     $db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
                     //throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
                 }
-
+*/
                 $fp = fopen( $dfsFilePath, 'rb' );
                 
                 if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
