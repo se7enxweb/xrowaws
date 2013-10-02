@@ -33,9 +33,9 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         
         if($memINI->hasVariable("MemcacheSettings", "Host") AND $memINI->hasVariable("MemcacheSettings", "Port"))
         {
-            $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
-            $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
-            $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+            $mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+            $mem_port = $memINI->variable( "MemcacheSettings", "Port" );
+            $driver = new Memcache(array('servers' => array($mem_host, $mem_port)));
             $pool = new Pool($driver);
         }
         else
@@ -43,9 +43,9 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             $fileINI = eZINI::instance( 'file.ini' );
             if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
             {
-               $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
-               $this->mem_port = 11211;
-               $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
+               $mem_port = 11211;
+               $driver = new Memcache(array('servers' => array($mem_host, $mem_port)));
                $pool = new Pool($driver);
             }else{
                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
@@ -83,15 +83,15 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
 
     public function passthrough( $filepath, $filesize, $offset = false, $length = false )
     {
-        $dfsFilePath = $filepath; 
+        $dfsFilePath = $filepath;
 
         $memINI = eZINI::instance( 'xrowaws.ini' );
 
         if($memINI->hasVariable("MemcacheSettings", "Host") AND $memINI->hasVariable("MemcacheSettings", "Port"))
         {
-            $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
-            $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
-            $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+            $mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+            $mem_port = $memINI->variable( "MemcacheSettings", "Port" );
+            $driver = new Memcache(array('servers' => array($mem_host, $mem_port)));
             $pool = new Pool($driver);
         }
         else
@@ -99,9 +99,9 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             $fileINI = eZINI::instance( 'file.ini' );
             if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
             {
-               $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
-               $this->mem_port = 11211;
-               $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
+               $mem_port = 11211;
+               $driver = new Memcache(array('servers' => array($mem_host, $mem_port)));
                $pool = new Pool($driver);
             }else{
                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
@@ -109,18 +109,18 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
         }
         
         //S3 implement
-        try 
+        try
         {
             $s3ini = eZINI::instance( 'xrowaws.ini' );
             $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
             $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
             $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
-            $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
+            $bucket = $s3ini->variable( 'Settings', 'Bucket' );
         
             // Instantiate an S3 client
-            $this->s3 = Aws::factory(array('key' => $awskey,
-                    'secret' => $secretkey,
-                    'region' => $region))->get('s3');
+            $s3 = Aws::factory(array('key' => $awskey,
+                                     'secret' => $secretkey,
+                                     'region' => $region))->get('s3');
         }catch(Exception $e){
             eZDebugSetting::writeDebug( 'Amazon S3', "dfs::ctor('$e')" );
         }
@@ -132,18 +132,18 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
                 $range= 'bytes='.$offset.'-'.$length;
                 try
                 {
-                    $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
-                                                         'Key' => $dfsFilePath,
-                                                         'Range'  => $range));
+                    $result = $s3->getObject(array('Bucket' => $bucket,
+                                                   'Key' => $dfsFilePath,
+                                                   'Range' => $range));
                 }catch(S3Exception $e)
-                {  
+                {
                     throw new RuntimeException( "There was an error getting the object.$dfsFilePath\n" );
                 }
             }else{
                 try
                 {
-                    $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
-                                                            'Key' => $dfsFilePath));
+                    $result = $this->s3->getObject(array('Bucket' => $bucket,
+                                                         'Key' => $dfsFilePath));
                 }catch(S3Exception $e)
                 {
                     throw new RuntimeException( "There was an error getting the object.$dfsFilePath\n" );
@@ -163,33 +163,35 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             }
             else
             {
-                if ( $offset === false && $length === false )
+                if ( $length === false )
                 {
                     echo $item->get($dfsFilePath);
                 }
                 else
                 {
-                    $tmp  = tempnam ( dirname( $dfsFilePath ) , basename($dfsFilePath) . ".tmp." );
-                    file_put_contents($tmp, $item->get($dfsFilePath))
-                                    $fp = fopen( $tmp, 'rb' );
+                    $tmp = tempnam ( dirname( $dfsFilePath ) , basename($dfsFilePath) . ".tmp" );
+                    file_put_contents($tmp, $item->get($dfsFilePath));
+                    
+                    $fp = fopen( $tmp, 'rb' );
 
                     if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
                         throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
                     
                     if ( $offset === false && $length === false )
-                    {    
+                    {
                         $item->lock();
                         $item->set(fpassthru( $fp ));
                         fpassthru( $fp );
                     }
                     else
-                    {   $item->lock();
+                    { 
+					    $item->lock();
                         $item->set(fread( $fp, $length ));
                         echo fread( $fp, $length );
                     }
                     fclose( $fp );
-					unlink($tmp);
-                }    
+                    unlink($tmp);
+                }
             }
         }
     }
