@@ -45,8 +45,8 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             {
                $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
                $this->mem_port = 11211;
-               $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-               $this->pool = new Pool($this->driver);
+               $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $pool = new Pool($driver);
             }else{
                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
             }
@@ -101,8 +101,8 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             {
                $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
                $this->mem_port = 11211;
-               $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-               $this->pool = new Pool($this->driver);
+               $driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+               $pool = new Pool($driver);
             }else{
                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
             }
@@ -160,39 +160,36 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             if($item->isMiss())
             {
                 throw new RuntimeException( "There was an error getting the object.$dfsFilePath\n" );
-/*
-                if ( !file_exists( $dfsFilePath ) )
-                {
-                    $pool->flush();
-
-                    $db = eZDB::instance();
-                    $db->query("USE silentcaldfscluster");
-                    $db->query("DELETE FROM ezdfsfile WHERE name_trunk like '%/cache/%'");
-                    //throw new RuntimeException( "Unable to open DFS file '$dfsFilePath'" );
-                }
-*/
-                $fp = fopen( $dfsFilePath, 'rb' );
-                
-                if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
-                    throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
-                
-                if ( $offset === false && $length === false )
-                {    
-                    $item->lock();
-                    $item->set(fpassthru( $fp ));
-                    fpassthru( $fp );
-                }
-                else
-                {   $item->lock();
-                    $item->set(fread( $fp, $length ));
-                    echo fread( $fp, $length );
-                }
-                
-                fclose( $fp );
             }
             else
             {
-                echo $item->get($dfsFilePath);
+                if ( $offset === false && $length === false )
+                {
+                    echo $item->get($dfsFilePath);
+                }
+                else
+                {
+                    $tmp  = tempnam ( dirname( $dfsFilePath ) , basename($dfsFilePath) . ".tmp." );
+                    file_put_contents($tmp, $item->get($dfsFilePath))
+                                    $fp = fopen( $tmp, 'rb' );
+
+                    if ( $offset !== false && @fseek( $fp, $offset ) === -1 )
+                        throw new RuntimeException( "Failed to seek offset $offset on file '$filepath'" );
+                    
+                    if ( $offset === false && $length === false )
+                    {    
+                        $item->lock();
+                        $item->set(fpassthru( $fp ));
+                        fpassthru( $fp );
+                    }
+                    else
+                    {   $item->lock();
+                        $item->set(fread( $fp, $length ));
+                        echo fread( $fp, $length );
+                    }
+                    fclose( $fp );
+					unlink($tmp);
+                }    
             }
         }
     }
