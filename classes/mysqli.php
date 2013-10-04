@@ -243,22 +243,21 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                                    $fname ) === false )
         {
             return $this->_fail( $srcFilePath, "Failed to insert file metadata on copying." );
+        }else{
+            $insert_array=array( 'datatype'=> $datatype,
+                                 'name' => $dstFilePath,
+                                 'name_trunk' => $nameTrunk,
+                                 'name_hash' => $filePathHash,
+                                 'scope' => $scope,
+                                 'size' => $contentLength,
+                                 'mtime' => $fileMTime,
+                                 'expired' => ($fileMTime < 0) ? 1 : 0 );
+            
+            $filePath_key =$dstFilePath ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->lock();
+            $item->set($insert_array);
         }
-
-        $insert_array=array( 'datatype'=> $datatype,
-                             'name' => $dstFilePath,
-                             'name_trunk' => $nameTrunk,
-                             'name_hash' => $filePathHash,
-                             'scope' => $scope,
-                             'size' => $contentLength,
-                             'mtime' => $fileMTime,
-                             'expired' => ($fileMTime < 0) ? 1 : 0 );
-        
-        $filePath_key =$dstFilePath ."metadata";
-        $item = $this->pool->getItem($filePath_key);
-        $item->lock();
-        $item->set($insert_array);
-
         // Copy file data.
         if ( !$this->dfsbackend->copyFromDFSToDFS( $srcFilePath, $dstFilePath ) )
         {
@@ -306,8 +305,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( mysqli_affected_rows( $this->db ) == 1 )
         {
             $this->dfsbackend->delete( $filePath );
-            $item = $this->pool->getItem($filePath);
-            $item->clear();
         }
 
         $this->eventHandler->notify( 'cluster/deleteFile', array( $filePath ) );
@@ -1063,23 +1060,23 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             return $this->_fail( "Failed to insert file metadata while storing. Possible race condition" );
         }
-
-        $insert_array=array( 'datatype' => $datatype,
-                             'name' => $filePath,
-                             'name_trunk' => $nameTrunk,
-                             'name_hash' => $filePathHash,
-                             'scope' => $scope,
-                             'size' => $contentLength,
-                             'mtime' => $fileMTime,
-                             'expired' => ( $fileMTime < 0 ) ? 1 : 0 );
-        
-        $filePath_key =$filePath ."metadata";
-        
-        $item = $this->pool->getItem($filePath_key);
-       
-        $item->lock();
-        $item->set($insert_array);
-
+        else{
+            $insert_array=array( 'datatype' => $datatype,
+                                 'name' => $filePath,
+                                 'name_trunk' => $nameTrunk,
+                                 'name_hash' => $filePathHash,
+                                 'scope' => $scope,
+                                 'size' => $contentLength,
+                                 'mtime' => $fileMTime,
+                                 'expired' => ( $fileMTime < 0 ) ? 1 : 0 );
+            
+            $filePath_key =$filePath ."metadata";
+            
+            $item = $this->pool->getItem($filePath_key);
+           
+            $item->lock();
+            $item->set($insert_array);
+        }
 
         // copy given $filePath to DFS
         
@@ -1134,21 +1131,22 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $fname ) === false )
         {
             return $this->_fail( "Failed to insert file metadata while storing contents. Possible race condition" );
+        }else
+        {
+            $update_array=array( 'datatype' => $datatype,
+                       'name' => $filePath,
+                       'name_trunk' => $nameTrunk,
+                       'name_hash' => $filePathHash,
+                       'scope' => $scope,
+                       'size' => $contentLength,
+                       'mtime' => $curTime,
+                       'expired' => ( $curTime < 0 ) ? 1 : 0 );
+
+            $filePath_key =$filePath . "metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->lock();
+            $item->set($update_array);
         }
-
-        $update_array=array( 'datatype' => $datatype,
-                   'name' => $filePath,
-                   'name_trunk' => $nameTrunk,
-                   'name_hash' => $filePathHash,
-                   'scope' => $scope,
-                   'size' => $contentLength,
-                   'mtime' => $curTime,
-                   'expired' => ( $curTime < 0 ) ? 1 : 0 );
-
-        $filePath_key =$filePath . "metadata";
-        $item = $this->pool->getItem($filePath_key);
-        $item->lock();
-        $item->set($update_array);
 
         if ( !$this->dfsbackend->createFileOnDFS( $filePath, $contents ) )
         {
