@@ -359,11 +359,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             $this->_rollback( $fname );
             return $this->_fail( "Selecting file metadata by like statement $like failed" );
-        }else{
-            $mem_key = $this->_quote( $like, true ) . "metadata";
-            $item = $this->pool->getItem($mem_key);
-            $item->lock();
-            $item->set($this->_query( $selectSQL, $fname ));
         }
 
         $resultCount = mysqli_num_rows( $res );
@@ -390,10 +385,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             $this->_rollback( $fname );
             return $this->_fail( "Purging file metadata by like statement $like failed" );
-        }else{
-            $filePath_key =$this->_quote( $like, true ) ."metadata";
-            $item = $this->pool->getItem($filePath_key);
-            $item->clear();
         }
         
         $deletedDBFiles = mysqli_affected_rows( $this->db );
@@ -520,9 +511,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             return $this->_fail( "Failed to delete files by like: '$like'" );
         }
-        $filePath_key =$this->_quote( $like, true ) ."metadata";
-        $item = $this->pool->getItem($filePath_key);
-        $item->clear();
         return true;
     }
 
@@ -563,11 +551,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$res = $this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Failed to delete files by regex: '$regex'" );
-        }else{
-            $filePath_key =$this->_quote( $regex ) ."metadata";
-            $item = $this->pool->getItem($filePath_key);
-            $item->clear();
         }
+
         return true;
     }
 
@@ -614,11 +599,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$res = $this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Failed to delete files by wildcard: '$wildcard'" );
-        }else{
-            $filePath_key =$regex ."metadata";
-            $item = $this->pool->getItem($filePath_key);
-            $item->clear();
         }
+
         return true;
     }
 
@@ -655,10 +637,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             {
                 eZDebug::writeError( "Failed to delete files in dir: '$commonPath/$dirItem/$commonSuffix%'", __METHOD__ );
                 $event = false;
-            }else{
-                $filePath_key =$this->_quote( "$commonPath/$dirItem/$commonSuffix%", true ) ."metadata";
-                $item = $this->pool->getItem($filePath_key);
-                $item->clear();
             }
 
             if ( $event )
@@ -852,31 +830,22 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
     function _fetchMetadata( $filePath, $fname = false )
     {
         $metadata = $this->eventHandler->filter( 'cluster/loadMetadata', $filePath );
+        
+        $filePath_key =$filePath ."metadata";
+        $item = $this->pool->getItem($filePath_key);
         if ( is_array( $metadata ) )
             return $metadata;
 
-        $filePath_key =$filePath ."metadata";
-        
-        $item = $this->pool->getItem($filePath_key);
-        $meta_info=$item->get($filePath_key);
-        if( !$item->isMiss() )
-        {
-            $metadata = $meta_info;
-        }
+        if ( $fname )
+            $fname .= "::_fetchMetadata($filePath)";
         else
-        {
-            if ( $fname )
-                $fname .= "::_fetchMetadata($filePath)";
-            else
-                $fname = "_fetchMetadata($filePath)";
-            $sql = "SELECT * FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath );
-            $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
-            if( is_array( $metadata ) )
-            {
-                $item->lock();
-                $item->set($metadata);
-            }
-        }
+            $fname = "_fetchMetadata($filePath)";
+        $sql = "SELECT * FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath );
+        $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
+        
+        $item->get($filePath_key);
+        $item->lock();
+        $item->set($metadata);
 
         if ( is_array( $metadata ) )
             $this->eventHandler->notify( 'cluster/storeMetadata', array( $metadata ) );
