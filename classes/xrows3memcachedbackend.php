@@ -24,15 +24,11 @@ class xrowS3MemcachedBackend
     public function __construct()
     {
 
-        $mountPointPath = eZINI::instance( 'file.ini' )->variable( 'eZDFSClusteringSettings', 'MountPointPath' );
-
-        if ( substr( $mountPointPath, -1 ) != '/' )
-            $mountPointPath = "$mountPointPath/";
-
-        $this->mountPointPath = $mountPointPath;
-
         $this->filePermissionMask = octdec( eZINI::instance()->variable( 'FileSettings', 'StorageFilePermissions' ) );
-        
+        if ( !extension_loaded( 'memcached' ) )
+        {
+            throw new Exception( "Memcached not enabled in PHP.");
+        }
         //Memcache implement(Stash)
 
             $memINI = eZINI::instance( 'xrowaws.ini' );
