@@ -25,47 +25,36 @@ class xrowS3MemcachedBackend
     {
 
         $this->filePermissionMask = octdec( eZINI::instance()->variable( 'FileSettings', 'StorageFilePermissions' ) );
+
         if ( !extension_loaded( 'memcached' ) )
         {
             throw new Exception( "Memcached not enabled in PHP.");
         }
+
         //Memcache implement(Stash)
 
-            $memINI = eZINI::instance( 'xrowaws.ini' );
-            if($memINI->hasVariable("MemcacheSettings", "Host")
-               AND $memINI->hasVariable("MemcacheSettings", "Port"))
-            {
-                $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
-                $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
-                $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-                $this->pool = new Pool($this->driver);
-            }else
-            {
-                $fileINI = eZINI::instance( 'file.ini' );
-                if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
-                {
-                    $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
-                    $this->mem_port = 11211;
-                    $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-                    $this->pool = new Pool($this->driver);
-                }else{
-                    eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
-                }
-            }
+        $memINI = eZINI::instance( 'xrowaws.ini' );
+        $mem_host=$memINI->variable( "MemcacheSettings", "Host" );
+        if($memINI->hasVariable("MemcacheSettings", "Host") && $memINI->hasVariable("MemcacheSettings", "Port") &&  !empty($mem_host))
+        {
+            $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
+            $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
+            $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
+            $this->pool = new Pool($this->driver);
+        }else{
+            eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
+        }
 
         //S3 implement
 
-            $s3ini = eZINI::instance( 'xrowaws.ini' );
-            $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
-            $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
-            $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
-            
-            $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );
-            
-            // Instantiate an S3 client
-            $this->s3 = Aws::factory(array('key' => $awskey,
-                                           'secret' => $secretkey,
-                                           'region' => $region))->get('s3');
+        $s3ini = eZINI::instance( 'xrowaws.ini' );
+        $awskey = $s3ini->variable( 'Settings', 'AWSKey' );
+        $secretkey = $s3ini->variable( 'Settings', 'SecretKey' );
+        $region = $s3ini->hasVariable( 'Settings', 'AWSRegion' ) ? $s3ini->variable( 'Settings', 'AWSRegion' ) : Region::US_EAST_1 ;
+        $this->bucket = $s3ini->variable( 'Settings', 'Bucket' );    
+        $this->s3 = Aws::factory(array('key' => $awskey,
+                                       'secret' => $secretkey,
+                                       'region' => $region))->get('s3');
     }
 
     /**
@@ -163,13 +152,11 @@ class xrowS3MemcachedBackend
         }else{
             $srcFilePath = $this->makeDFSPath( $srcFilePath );
             $item_src = $this->pool->getItem($srcFilePath);
-            $item_src->get($srcFilePath);
-            
             $item_dst = $this->pool->getItem($dstFilePath);
+
+            $item_src->get($srcFilePath);
             if($item_src->isMiss())
             {
-                $item_src->lock();
-                $item_src->set(file_get_contents( $srcFilePath ));
                 $item_dst->lock();
                 $item_dst->set(file_get_contents( $srcFilePath ));
                 $ret=true;
@@ -277,7 +264,7 @@ class xrowS3MemcachedBackend
         {
             if($length !== false)
             {
-			    $range= 'bytes='.$startOffset.'-'.$length;
+               $range= 'bytes='.$startOffset.'-'.$length;
                 try
                 {
                     $result = $this->s3->getObject(array('Bucket' => $this->bucket, 
@@ -387,8 +374,8 @@ class xrowS3MemcachedBackend
             if($item->isMiss())
             {
                 $item->lock();
-                $item->set(@file_get_contents( $this->makeDFSPath( $filePath ) ));
-                $ret = @file_get_contents( $this->makeDFSPath( $filePath ) );
+                $item->set(file_get_contents( $this->makeDFSPath( $filePath ) ));
+                $ret = file_get_contents( $this->makeDFSPath( $filePath ) );
             }else
             {
                 $ret = $item->get($filePath);
@@ -464,8 +451,6 @@ class xrowS3MemcachedBackend
 
             if ( $ret )
             eZClusterFileHandler::cleanupEmptyDirectories( $oldPath );
-
-           // $ret = true;
         }
         
         $this->accumulatorStop();
@@ -498,7 +483,7 @@ class xrowS3MemcachedBackend
             $item->get($filePath);
             if($item->isMiss())
             {
-                return file_exists( $this->makeDFSPath( $filePath ) );
+                return false;
             }
             else
             {
@@ -562,7 +547,6 @@ class xrowS3MemcachedBackend
             $createResult = eZFile::create( basename( $filePath ), dirname( $filePath ), $contents, $atomic );
             
             $item = $this->pool->getItem($filePath);
-            $item->lock();
             $item->set($contents);
             
             if ( $createResult )

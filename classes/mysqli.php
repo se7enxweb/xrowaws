@@ -129,25 +129,15 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         
         //Memcache implement(Stash)
         $memINI = eZINI::instance( 'xrowaws.ini' );
-        if($memINI->hasVariable("MemcacheSettings", "Host")
-               AND $memINI->hasVariable("MemcacheSettings", "Port"))
+        $mem_host=$memINI->variable( "MemcacheSettings", "Host" );
+        if($memINI->hasVariable("MemcacheSettings", "Host") && $memINI->hasVariable("MemcacheSettings", "Port") && !empty($mem_host))
         {
             $this->mem_host = $memINI->variable( "MemcacheSettings", "Host" );
             $this->mem_port = $memINI->variable( "MemcacheSettings", "Port" );
             $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
             $this->pool = new Pool($this->driver);
-        }else
-        {
-            $fileINI = eZINI::instance( 'file.ini' );
-           if($fileINI->hasVariable("eZDFSClusteringSettings", "DBHost"))
-           {
-               $this->mem_host = $fileINI->variable( "eZDFSClusteringSettings", "DBHost" );
-               $this->mem_port = 11211;
-               $this->driver = new Memcache(array('servers' => array($this->mem_host, $this->mem_port)));
-               $this->pool = new Pool($this->driver);
-           }else{
+        }else{
                eZDebugSetting::writeDebug( 'Memcache', "Missing INI Variables in configuration block MemcacheSettings." );
-           }
         }
         
         // Instantiate an S3 client
@@ -297,11 +287,8 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Purging file metadata for $filePath failed" );
-        }else{
-            $filePath_key =$filePath ."metadata";
-            $item = $this->pool->getItem($filePath_key);
-            $item->clear();
         }
+
         if ( mysqli_affected_rows( $this->db ) == 1 )
         {
             $this->dfsbackend->delete( $filePath );
@@ -463,6 +450,9 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             $item = $this->pool->getItem($filePath);
             $item->clear();
+            $filePath_key =$filePath ."metadata";
+            $item1 = $this->pool->getItem($filePath_key);
+            $item1->clear();
         }
         
         return true;
@@ -1040,9 +1030,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
                                  'expired' => ( $fileMTime < 0 ) ? 1 : 0 );
             
             $filePath_key =$filePath ."metadata";
-            
             $item = $this->pool->getItem($filePath_key);
-           
             $item->lock();
             $item->set($insert_array);
         }
