@@ -213,6 +213,10 @@ class xrowS3MemcachedBackend
                     if ( $ret )
                         eZClusterFileHandler::cleanupEmptyDirectories( $dfsPath );
                 }
+
+                $filePath_key =$file ."metadata";
+                $item = $this->pool->getItem($filePath_key);
+                $item->clear();
             }
         }
         else
@@ -241,6 +245,10 @@ class xrowS3MemcachedBackend
                 if ( $ret )
                     eZClusterFileHandler::cleanupEmptyDirectories( $dfsPath );
             }
+
+            $filePath_key =$filePath ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
         
         $this->accumulatorStop();

@@ -288,7 +288,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             return $this->_fail( "Purging file metadata for $filePath failed" );
         }
-
         if ( mysqli_affected_rows( $this->db ) == 1 )
         {
             $this->dfsbackend->delete( $filePath );
@@ -435,24 +434,13 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
     protected function _deleteInner( $filePath, $fname )
     {
         if ( !$this->_query( "UPDATE " . self::TABLE_METADATA . " SET mtime=-ABS(mtime), expired=1 WHERE name_hash=" . $this->_md5( $filePath ), $fname ) )
-            return $this->_fail( "Deleting file $filePath failed" );
-        
-        if(strpos($filePath,'/storage/') !== FALSE )
-        {   
-            try {
-                  $this->s3->deleteObject(array('Bucket' => $this->bucket,
-                                                'Key' => $filePath ));
-                } catch (Exception $e) {
-                     eZDebug::writeError( "File '$filePath' does not exist while trying to delete.", __METHOD__ );
-                }
-        }
-        else
         {
-            $item = $this->pool->getItem($filePath);
-            $item->clear();
+            return $this->_fail( "Deleting file $filePath failed" );
+        }else
+        {
             $filePath_key =$filePath ."metadata";
-            $item1 = $this->pool->getItem($filePath_key);
-            $item1->clear();
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
         
         return true;
@@ -501,6 +489,24 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         {
             return $this->_fail( "Failed to delete files by like: '$like'" );
         }
+
+        $resultCount = mysqli_num_rows( $res );
+
+        if ( $resultCount != 0 )
+        {
+            for ( $i = 0; $i < $resultCount; $i++ )
+            {
+                $row = mysqli_fetch_assoc( $res );
+                $files[] = $row['name'];
+            }
+        }
+
+        foreach( $files as $file )
+        {
+            $filePath_key =$file ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
+        }
         return true;
     }
 
@@ -541,6 +547,24 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         if ( !$res = $this->_query( $sql, $fname ) )
         {
             return $this->_fail( "Failed to delete files by regex: '$regex'" );
+        }
+
+        $resultCount = mysqli_num_rows( $res );
+
+        if ( $resultCount != 0 )
+        {
+            for ( $i = 0; $i < $resultCount; $i++ )
+            {
+                $row = mysqli_fetch_assoc( $res );
+                $files[] = $row['name'];
+            }
+        }
+
+        foreach( $files as $file )
+        {
+            $filePath_key =$file ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
         }
 
         return true;
@@ -591,6 +615,24 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             return $this->_fail( "Failed to delete files by wildcard: '$wildcard'" );
         }
 
+        $resultCount = mysqli_num_rows( $res );
+
+        if ( $resultCount != 0 )
+        {
+            for ( $i = 0; $i < $resultCount; $i++ )
+            {
+                $row = mysqli_fetch_assoc( $res );
+                $files[] = $row['name'];
+            }
+        }
+
+        foreach( $files as $file )
+        {
+            $filePath_key =$file ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->clear();
+        }
+
         return true;
     }
 
@@ -627,6 +669,25 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             {
                 eZDebug::writeError( "Failed to delete files in dir: '$commonPath/$dirItem/$commonSuffix%'", __METHOD__ );
                 $event = false;
+            }
+            
+
+            $resultCount = mysqli_num_rows( $res );
+
+            if ( $resultCount != 0 )
+            {
+                for ( $i = 0; $i < $resultCount; $i++ )
+                {
+                    $row = mysqli_fetch_assoc( $res );
+                    $files[] = $row['name'];
+                }
+            }
+
+            foreach( $files as $file )
+            {
+               $filePath_key =$file ."metadata";
+               $item = $this->pool->getItem($filePath_key);
+               $item->clear();
             }
 
             if ( $event )
@@ -821,28 +882,34 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
     {
         $metadata = $this->eventHandler->filter( 'cluster/loadMetadata', $filePath );
         
-        $filePath_key =$filePath ."metadata";
-        $item = $this->pool->getItem($filePath_key);
         if ( is_array( $metadata ) )
+        {
+            $filePath_key =$filePath ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->lock();
+            $item->set($metadata);
             return $metadata;
+        }
 
         if ( $fname )
             $fname .= "::_fetchMetadata($filePath)";
         else
             $fname = "_fetchMetadata($filePath)";
+        
         $sql = "SELECT * FROM " . self::TABLE_METADATA . " WHERE name_hash=" . $this->_md5( $filePath );
         $metadata = $this->_selectOneAssoc( $sql, $fname,"Failed to retrieve file metadata: $filePath",true );
-        
-        $item->get($filePath_key);
-        $item->lock();
-        $item->set($metadata);
 
         if ( is_array( $metadata ) )
+        {
+            $filePath_key =$filePath ."metadata";
+            $item = $this->pool->getItem($filePath_key);
+            $item->lock();
+            $item->set($metadata);
             $this->eventHandler->notify( 'cluster/storeMetadata', array( $metadata ) );
+        }
 
         return $metadata;
     }
-    
     
     public function _linkCopy( $srcPath, $dstPath, $fname = false )
     {
