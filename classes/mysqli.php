@@ -589,7 +589,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         }
         return true;
     }
-
+    
     public function _exists( $filePath, $fname = false, $ignoreExpiredFiles = true, $checkOnDFS = false )
     {
         if ( $fname )
@@ -612,8 +612,9 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $rc = $row[1] >= 0;
         else
             $rc = true;
-                
-        if ($checkOnDFS && $rc )
+        // @TODO Data might be missing in memcached 
+        //if ( ( $checkOnDFS && $rc ) or strpos( $filePath, '/storage/' ) === FALSE )
+        if ( $checkOnDFS && $rc )
         {
             $rc = $this->dfsbackend->existsOnDFS( $filePath );
         }
@@ -683,7 +684,6 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
 
         if ( !$this->dfsbackend->copyFromDFS( $filePath, $tmpFilePath ) )
         {
-
             eZDebug::writeError("Failed copying DFS://$filePath to FS://$tmpFilePath ");
             return false;
         }
@@ -691,20 +691,7 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
         // Make sure all data is written correctly
         clearstatcache();
 
-        if(strpos($tmpFilePath,'/storage/') !== FALSE )
-        {
-            try
-            {
-                $result = $this->s3->getObject(array('Bucket' => $this->bucket,
-                                                     'Key' => $filePath));
-            }catch(S3Exception $e){
-                eZDebug::writeError( "There was an error getting the object.$srcFilePath\n" );
-            }
-            
-            $tmpSize = (int)$result['ContentLength'];
-        }else{
-            $tmpSize = filesize( $tmpFilePath );
-        } 
+        $tmpSize = filesize( $tmpFilePath );
 
         // @todo Throw an exception
         if ( $tmpSize != $metaData['size'] )

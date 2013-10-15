@@ -121,8 +121,14 @@ class xrowS3MemcachedBackend
 
             $srcFilePath = $this->makeDFSPath( $srcFilePath );
             $item_src = $this->pool->getItem($srcFilePath);
-
-            $ret = $this->createFileOnLFS( $dstFilePath, $item_src->get($srcFilePath) );
+            if ( $item_src->isMiss() )
+            {
+                $ret = false;
+            }
+            else
+            {
+                $ret = $this->createFileOnLFS( $dstFilePath, $item_src->get($srcFilePath) );
+            }
         }
         $this->accumulatorStop();
 

@@ -30,14 +30,14 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
      * @note This is primarily available for debugging purposes.
      * @var int
      */
-    const LOCAL_CACHE = 1;
+    const LOCAL_CACHE = 0;
 
     /**
      * Controls the maximum number of metdata entries to keep in memory for this request.
      * If the limit is reached the least used entries are removed.
      * @var int
      */
-    const INFOCACHE_MAX = 200;
+    const INFOCACHE_MAX = 500;
 
     /**
      * Constructor
