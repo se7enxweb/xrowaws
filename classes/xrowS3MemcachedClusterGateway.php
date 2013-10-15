@@ -53,34 +53,20 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
 
     public function fetchFileMetadata( $filepath )
     {
-        $filePath_key = $filepath . "metadata";
-        $item = $this->pool->getItem($filePath_key);
-        $item->get($filePath_key);
+        $filePathHash = md5( $filepath );
+        $sql = "SELECT * FROM ezdfsfile WHERE name_hash='$filePathHash'" ;
 
-        if($item->isMiss())
-        {
-            $filePathHash = md5( $filepath );
-            $sql = "SELECT * FROM ezdfsfile WHERE name_hash='$filePathHash'" ;
-
-            if ( !$res = mysqli_query( $this->db, $sql ) )
-                throw new RuntimeException( "Failed to fetch file metadata for '$filepath' " . "(error #". mysqli_errno( $this->db ).": " . mysqli_error( $this->db ) );
+        if ( !$res = mysqli_query( $this->db, $sql ) )
+            throw new RuntimeException( "Failed to fetch file metadata for '$filepath' " . "(error #". mysqli_errno( $this->db ).": " . mysqli_error( $this->db ) );
     
-            if ( mysqli_num_rows( $res ) == 0 )
-            {
-                return false;
-            }
-    
-            $metadata = mysqli_fetch_assoc( $res );
-            
-            $item->lock();
-            
-            $item->set($metadata);
-            
-            mysqli_free_result( $res );
-        }else
+        if ( mysqli_num_rows( $res ) == 0 )
         {
-            $metadata=$item->get($filePath_key);
+             return false;
         }
+    
+        $metadata = mysqli_fetch_assoc( $res );
+            
+        mysqli_free_result( $res );
 
         return $metadata;
     }
@@ -130,11 +116,15 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             {
                 if ( $length === false )
                 { 
+                    if ( !file_exists( $dfsFilePath ) || filesize($dfsFilePath) == 0)
+                    {
+                        $tmp=eZFile::create( basename( $dfsFilePath ), dirname( $dfsFilePath ), $datainfo, $atomic );
+                    }
                     echo $datainfo;
                 }
                 else
                 {
-                   if ( !file_exists( $dfsFilePath ) )
+                   if ( !file_exists( $dfsFilePath ) || filesize($dfsFilePath) == 0)
                    {
                         $tmp=eZFile::create( basename( $dfsFilePath ), dirname( $dfsFilePath ), $datainfo, $atomic );
                         if($tmp)
@@ -159,7 +149,6 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
                       else
                           echo fread( $fp, $length );
                    }
-                
                    fclose( $fp );
                 }
             }
