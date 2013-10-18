@@ -116,10 +116,6 @@ class xrowS3MemcachedClusterGateway extends ezpClusterGateway
             {
                 if ( $length === false )
                 { 
-                    if ( !file_exists( $dfsFilePath ) || filesize($dfsFilePath) == 0)
-                    {
-                        $tmp=eZFile::create( basename( $dfsFilePath ), dirname( $dfsFilePath ), $datainfo, $atomic );
-                    }
                     echo $datainfo;
                 }
                 else

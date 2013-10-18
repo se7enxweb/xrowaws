@@ -617,15 +617,27 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
                         else
                         {
                             $uniquePath = $this->fetchUnique();
-
-                            $args = array( $uniquePath, $this->metaData['mtime'] );
-                            if ( $extraData !== null )
-                                $args[] = $extraData;
-                            $retval = call_user_func_array( $retrieveCallback, $args );
-                            $this->fileDeleteLocal( $uniquePath );
-                            if ( $retval instanceof eZClusterFileFailure )
-                                break;
-                            return $retval;
+                            if($uniquePath === false && $this->fileExists( $this->filePath ,false))
+                            {
+                               $this->fileDeleteLocal( $this->filePath );
+                               $args = array( $this->filePath );
+                               if ( $noCache )
+                                   $extraData['noCache'] = $noCache;
+                               if ( $extraData !== null )
+                                   $args[] = $extraData;
+                               $fileData = call_user_func_array( $generateCallback, $args );
+                               return $this->storeCache( $fileData );
+                            }else
+                            {
+                                $args = array( $uniquePath, $this->metaData['mtime'] );
+                                if ( $extraData !== null )
+                                    $args[] = $extraData;
+                                $retval = call_user_func_array( $retrieveCallback, $args );
+                                $this->fileDeleteLocal( $uniquePath );
+                                if ( $retval instanceof eZClusterFileFailure )
+                                    break;
+                                return $retval;
+                            }
                         }
                     }
                     eZDebugSetting::writeDebug( 'kernel-clustering', "Database file does not exist, need to regenerate data", __METHOD__ );
