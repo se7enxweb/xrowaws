@@ -612,8 +612,13 @@ class xrowS3MemcachedHandlerBackend implements eZClusterEventNotifier
             $rc = $row[1] >= 0;
         else
             $rc = true;
-        // @TODO Data might be missing in memcached 
-        //if ( ( $checkOnDFS && $rc ) or strpos( $filePath, '/storage/' ) === FALSE )
+
+        // Data might be missing in memcached 
+        if ( strpos( $filePath, '/storage/' ) === FALSE )
+        {
+            $checkOnDFS = true;
+        }
+
         if ( $checkOnDFS && $rc )
         {
             $rc = $this->dfsbackend->existsOnDFS( $filePath );

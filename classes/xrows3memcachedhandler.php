@@ -617,7 +617,7 @@ class eZS3MemcachedHandler implements eZClusterFileHandlerInterface, ezpDatabase
                         else
                         {
                             $uniquePath = $this->fetchUnique();
-                            if($uniquePath === false && $this->fileExists( $this->filePath ,false))
+                            if($uniquePath === false)
                             {
                                $this->fileDeleteLocal( $this->filePath );
                                $args = array( $this->filePath );
